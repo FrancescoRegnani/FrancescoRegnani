@@ -1,7 +1,8 @@
 import { View } from 'react-native';
 import { Link } from 'expo-router';
-import { Screen, Title, Body, Button } from '../components/ui';
+import { Screen, Title, Body, Caption, Button } from '../components/ui';
 import { colors, spacing } from '../constants/theme';
+import { isDemoMode } from '../lib/backend-mode';
 
 export default function Welcome() {
   return (
@@ -11,6 +12,11 @@ export default function Welcome() {
         <Body style={{ textAlign: 'center', color: colors.textSecondary }}>
           Preparati. Un giorno alla volta.
         </Body>
+        {isDemoMode && (
+          <Caption style={{ color: colors.warning, textAlign: 'center' }}>
+            Modalità demo — dati salvati solo su questo dispositivo, nessun account richiesto.
+          </Caption>
+        )}
       </View>
       <View style={{ gap: spacing.md, paddingBottom: spacing.lg }}>
         <Link href="/signup" asChild>

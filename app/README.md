@@ -8,6 +8,39 @@ Fasi 0-20 (MVP core).
 Stack: **Expo / React Native** + **TypeScript** + **expo-router** +
 **Supabase** (database, auth, RLS).
 
+## Provala subito, senza creare nessun account
+
+L'app funziona anche senza Supabase: se non trova le credenziali in `.env`
+parte automaticamente in **modalità demo**, con i dati salvati solo sul
+telefono (AsyncStorage) invece che su un database vero. Serve solo:
+
+- un computer (Mac, Windows o Linux) con [Node.js](https://nodejs.org)
+  installato (versione LTS, un doppio click sull'installer)
+- l'app **Expo Go** sul telefono (gratuita, App Store / Google Play)
+- telefono e computer sulla **stessa rete WiFi**
+
+Poi, da terminale:
+
+```bash
+git clone <url-di-questo-repository>
+cd FrancescoRegnani/app
+npm install
+npx expo start
+```
+
+Si apre un QR code nel terminale: inquadralo con la fotocamera dell'iPhone
+(si apre da sola in Expo Go) o con lo scanner integrato di Expo Go su
+Android. L'app si carica sul telefono in pochi secondi.
+
+Puoi registrarti con un nome/email/password a caso (non viene verificato
+niente, è tutto locale), scegliere Commercialista, fare l'onboarding e
+provare la prima lezione: XP, streak e progressi restano salvati sul
+telefono tra un riavvio e l'altro.
+
+Quando in futuro configurerai un vero progetto Supabase (vedi sotto),
+basterà creare il file `.env`: l'app passerà da sola dalla modalità demo al
+database reale, senza toccare codice.
+
 ## Cosa è già pronto
 
 - Registrazione/login/logout con Supabase Auth (email+password).
