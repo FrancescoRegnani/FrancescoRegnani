@@ -73,6 +73,7 @@ export default function LessonScreen() {
   ].filter((o) => o.text.length > 0);
 
   const isCorrect = selected === question.correct_answer;
+  const correctOptionText = options.find((o) => o.key === question.correct_answer)?.text ?? question.correct_answer;
 
   function selectAnswer(key: string) {
     if (selected) return;
@@ -152,7 +153,7 @@ export default function LessonScreen() {
       {selected && (
         <View style={{ marginTop: spacing.lg }}>
           <Caption style={{ color: isCorrect ? colors.success : colors.danger }}>
-            {isCorrect ? '✅ Corretto!' : `❌ Non proprio. Risposta corretta: ${question.correct_answer}.`}
+            {isCorrect ? '✅ Corretto!' : `❌ Non proprio. Risposta corretta: ${correctOptionText}.`}
           </Caption>
           {question.explanation && <Body style={{ marginTop: spacing.xs }}>{question.explanation}</Body>}
         </View>
