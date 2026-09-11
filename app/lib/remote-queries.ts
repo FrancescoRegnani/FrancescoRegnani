@@ -245,8 +245,16 @@ export async function completeLessonSession(params: {
   return { xpEarned, accuracy, mastery, newStreak, totalTimeSeconds };
 }
 
+function localMidnightISO(): string {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+}
+
 export async function fetchMinutesStudiedToday(userId: string): Promise<number> {
-  const start = `${todayISO()}T00:00:00.000Z`;
+  // Must be the UTC instant of *local* midnight, not `${todayISO()}T00:00:00Z`
+  // (which would be midnight UTC — off by the user's timezone offset, so
+  // answers submitted right after local midnight could be missed).
+  const start = localMidnightISO();
   const { data, error } = await supabase
     .from('user_answers')
     .select('response_time')

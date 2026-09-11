@@ -14,7 +14,10 @@ export default function ReviewScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session) {
+      setLoading(false);
+      return;
+    }
     (async () => {
       const ids = await fetchDueLessonIds(session.user.id);
       const fetched = await Promise.all(ids.map((lessonId) => fetchLesson(lessonId)));

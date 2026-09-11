@@ -60,8 +60,18 @@ export function daysBetween(fromISO: string, toISO: string): number {
   return Math.round((to - from) / (1000 * 60 * 60 * 24));
 }
 
+/**
+ * Formats a Date as a plain YYYY-MM-DD string using the *local* calendar
+ * day. Deliberately does not go through `toISOString()`, which converts to
+ * UTC first: for any timezone ahead of UTC (e.g. Italy) that would roll the
+ * "day" over 1-2 hours before actual local midnight, misaligning streaks,
+ * daily goals and spaced-repetition due dates with the user's real day.
+ */
 export function toDateOnlyISO(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /** Fase 19: streak counting. */

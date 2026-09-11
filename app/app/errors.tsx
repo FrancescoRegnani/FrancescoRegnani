@@ -13,7 +13,10 @@ export default function ErrorsScreen() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session) {
+      setLoading(false);
+      return;
+    }
     fetchErrorSummary(session.user.id)
       .then(setItems)
       .finally(() => setLoading(false));

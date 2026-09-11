@@ -32,7 +32,10 @@ export default function Path() {
   const [examName, setExamName] = useState('');
 
   const load = useCallback(async () => {
-    if (!session || !profile?.selected_exam) return;
+    if (!session || !profile?.selected_exam) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const exams = await fetchExams();
