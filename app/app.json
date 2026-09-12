@@ -17,7 +17,7 @@
     "android": {
       "package": "com.proexam.app",
       "adaptiveIcon": {
-        "backgroundColor": "#0B5D3B",
+        "backgroundColor": "#1D8FA3",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -34,7 +34,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0B5D3B",
+          "backgroundColor": "#1D8FA3",
           "image": "./assets/splash-icon.png",
           "imageWidth": 160
         }

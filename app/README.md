@@ -63,6 +63,11 @@ browser a non poterlo mostrare.
 
 ## Cosa è già pronto
 
+- **Aspetto personalizzabile**: 5 colori tra cui scegliere da Profilo →
+  Aspetto (Azzurro canna da zucchero di default, poi Corallo, Prugna,
+  Salvia, Blu notte). Il colore scelto si applica subito a bottoni,
+  progress bar, tab bar e icone in tutta l'app — vedi
+  `lib/accent-context.tsx` e `constants/theme.ts` (`ACCENT_PALETTE`).
 - Registrazione/login/logout con Supabase Auth (email+password).
 - Onboarding: scelta esame, data esame, tempo di studio giornaliero.
 - Home con streak, obiettivo del giorno, XP, readiness (approssimata),

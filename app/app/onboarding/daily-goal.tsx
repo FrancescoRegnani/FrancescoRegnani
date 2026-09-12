@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Screen, Title, Body, Heading, Button } from '../../components/ui';
 import { useAuth } from '../../lib/auth-context';
+import { useAccent } from '../../lib/accent-context';
 import { updateUserProfile } from '../../lib/queries';
 import { colors, spacing, radius } from '../../constants/theme';
 
@@ -10,6 +11,7 @@ const OPTIONS = [5, 10, 20, 30, 45, 60];
 
 export default function DailyGoal() {
   const { session, refreshProfile } = useAuth();
+  const { accent } = useAccent();
   const [selected, setSelected] = useState<number>(20);
   const [saving, setSaving] = useState(false);
 
@@ -36,7 +38,10 @@ export default function DailyGoal() {
           <Pressable
             key={minutes}
             onPress={() => setSelected(minutes)}
-            style={[styles.option, selected === minutes && styles.optionSelected]}
+            style={[
+              styles.option,
+              selected === minutes && { borderColor: accent.primary, backgroundColor: accent.soft },
+            ]}
           >
             <Heading>{minutes}</Heading>
             <Body style={{ color: colors.textSecondary }}>min</Body>
@@ -66,9 +71,5 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  optionSelected: {
-    borderColor: colors.success,
-    backgroundColor: '#EAF7EF',
   },
 });

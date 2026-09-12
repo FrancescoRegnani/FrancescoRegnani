@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Title, Body, Heading } from '../components/ui';
+import { Screen, Title, Body, Heading, IconChip } from '../components/ui';
 import { useAuth } from '../lib/auth-context';
+import { useAccent } from '../lib/accent-context';
 import { fetchDueLessonIds, fetchLesson } from '../lib/queries';
 import { colors, spacing, radius } from '../constants/theme';
 import type { Lesson } from '../lib/types';
 
 export default function ReviewScreen() {
   const { session } = useAuth();
+  const { accent } = useAccent();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -33,7 +35,7 @@ export default function ReviewScreen() {
       </Pressable>
       <Title>Da ripassare</Title>
       {loading ? (
-        <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.success} />
+        <ActivityIndicator style={{ marginTop: spacing.xl }} color={accent.primary} />
       ) : lessons.length === 0 ? (
         <Body style={{ marginTop: spacing.lg, color: colors.textSecondary }}>
           Nessun ripasso in scadenza oggi.
@@ -48,6 +50,7 @@ export default function ReviewScreen() {
               style={styles.card}
               onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: item.id } })}
             >
+              <IconChip name="refresh" />
               <View style={{ flex: 1 }}>
                 <Heading>{item.title}</Heading>
               </View>
@@ -64,6 +67,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,

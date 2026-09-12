@@ -4,14 +4,14 @@ import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Screen, Title, Heading, Body, Caption } from '../../components/ui';
 import { useAuth } from '../../lib/auth-context';
+import { useAccent } from '../../lib/accent-context';
 import {
-  fetchExams,
   fetchLessonsForUnit,
   fetchProgressForUser,
   fetchSubjectsForExam,
   fetchUnitsForSubject,
 } from '../../lib/queries';
-import { colors, examColors, defaultExamColor, spacing, radius } from '../../constants/theme';
+import { colors, spacing, radius } from '../../constants/theme';
 import type { Lesson, Subject, Unit, UserProgress } from '../../lib/types';
 
 interface UnitBlock {
@@ -26,10 +26,10 @@ interface SubjectBlock {
 
 export default function Path() {
   const { session, profile } = useAuth();
+  const { accent } = useAccent();
   const [blocks, setBlocks] = useState<SubjectBlock[]>([]);
   const [progress, setProgress] = useState<Record<string, UserProgress>>({});
   const [loading, setLoading] = useState(true);
-  const [examName, setExamName] = useState('');
 
   const load = useCallback(async () => {
     if (!session || !profile?.selected_exam) {
@@ -38,9 +38,6 @@ export default function Path() {
     }
     setLoading(true);
     try {
-      const exams = await fetchExams();
-      const exam = exams.find((e) => e.id === profile.selected_exam);
-      setExamName(exam?.name ?? '');
       const subjects = await fetchSubjectsForExam(profile.selected_exam);
       const subjectBlocks: SubjectBlock[] = [];
       for (const subject of subjects) {
@@ -68,12 +65,10 @@ export default function Path() {
   if (loading) {
     return (
       <Screen style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={colors.success} />
+        <ActivityIndicator size="large" color={accent.primary} />
       </Screen>
     );
   }
-
-  const palette = examColors[examName] ?? defaultExamColor;
 
   return (
     <Screen>
@@ -92,6 +87,8 @@ export default function Path() {
                     const isCompleted = !!lessonProgress?.completed;
                     const isUnlocked = unlocked;
                     if (!isCompleted) unlocked = false;
+                    const isCheckpoint = lesson.is_checkpoint;
+                    const tone = isCheckpoint ? colors.warning : accent.primary;
 
                     return (
                       <Pressable
@@ -100,14 +97,15 @@ export default function Path() {
                         onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: lesson.id } })}
                         style={[
                           styles.node,
-                          { borderColor: isUnlocked ? palette.primary : colors.locked },
-                          isCompleted && { backgroundColor: '#EAF7EF' },
+                          !isUnlocked && styles.nodeLocked,
+                          isUnlocked && !isCompleted && { borderColor: tone },
+                          isCompleted && { borderColor: tone, backgroundColor: isCheckpoint ? '#FCF2DE' : accent.soft },
                         ]}
                       >
                         <Ionicons
-                          name={lesson.is_checkpoint ? 'trophy' : isCompleted ? 'checkmark-circle' : 'ellipse-outline'}
+                          name={isCheckpoint ? 'trophy' : isCompleted ? 'checkmark-circle' : 'ellipse-outline'}
                           size={22}
-                          color={isUnlocked ? palette.primary : colors.locked}
+                          color={isUnlocked ? tone : colors.locked}
                         />
                         <View style={{ flex: 1 }}>
                           <Body style={!isUnlocked ? { color: colors.locked } : undefined}>
@@ -137,5 +135,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: radius.lg,
     padding: spacing.md,
+  },
+  nodeLocked: {
+    backgroundColor: colors.background,
+    borderColor: colors.border,
   },
 });

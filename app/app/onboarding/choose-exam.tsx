@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-
 import { router } from 'expo-router';
 import { Screen, Title, Body, Heading, Caption } from '../../components/ui';
 import { useAuth } from '../../lib/auth-context';
+import { useAccent } from '../../lib/accent-context';
 import { fetchExams, updateUserProfile } from '../../lib/queries';
 import { examColors, defaultExamColor, colors, spacing, radius } from '../../constants/theme';
 import { SUPPORTED_EXAM_NAME } from '../../lib/types';
@@ -10,6 +11,7 @@ import type { Exam } from '../../lib/types';
 
 export default function ChooseExam() {
   const { session, refreshProfile } = useAuth();
+  const { accent } = useAccent();
   const [exams, setExams] = useState<Exam[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -39,7 +41,7 @@ export default function ChooseExam() {
         Scegli il tuo percorso. Potrai aggiungerne altri più avanti.
       </Body>
       {loading ? (
-        <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.success} />
+        <ActivityIndicator style={{ marginTop: spacing.xl }} color={accent.primary} />
       ) : (
         <FlatList
           data={exams}

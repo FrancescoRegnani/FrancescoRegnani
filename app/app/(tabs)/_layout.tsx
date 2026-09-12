@@ -1,13 +1,15 @@
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { colors } from '../../constants/theme';
+import { useAccent } from '../../lib/accent-context';
 
 export default function TabsLayout() {
+  const { accent } = useAccent();
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: colors.success,
+        tabBarActiveTintColor: accent.primary,
         tabBarInactiveTintColor: colors.textSecondary,
       }}
     >

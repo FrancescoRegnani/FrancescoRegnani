@@ -1,25 +1,54 @@
 // Design tokens for ProExam. Fase 3 of the guide: modern, simple,
 // trustworthy, young, professional — not academic, not childish.
-// Commercialista uses green/blue; other exams get their own accent once
-// their content ships (Fase 32-33).
 
 export const colors = {
   background: '#F7F9F8',
   surface: '#FFFFFF',
-  border: '#E4E9E7',
-  textPrimary: '#12201B',
-  textSecondary: '#5B6C65',
+  border: '#E7EBE9',
+  textPrimary: '#182422',
+  textSecondary: '#5B6C68',
   textInverse: '#FFFFFF',
-  success: '#1E9E5A',
-  danger: '#D64545',
+  // Semantic feedback colors are fixed and never follow the user's chosen
+  // accent: "correct" reads green and "wrong" reads red everywhere, so the
+  // meaning stays instantly recognizable no matter which accent is active.
+  success: '#2F9E63',
+  danger: '#E4573D',
   warning: '#E0A62B',
   locked: '#C7D0CC',
+  shadow: '#0F2A26',
 } as const;
 
+export interface AccentColor {
+  key: string;
+  name: string;
+  /** Saturated tone used for buttons, active icons, progress fills. */
+  primary: string;
+  /** Light wash of the same hue, used for selected/highlighted surfaces. */
+  soft: string;
+}
+
+/**
+ * The 5 accent colors a learner can pick from (Profile → Aspetto). Chosen at
+ * a "Material 600"-like lightness/saturation band so white text always sits
+ * on top cleanly, whichever one is active.
+ */
+export const ACCENT_PALETTE: AccentColor[] = [
+  { key: 'sugarcane', name: 'Azzurro canna da zucchero', primary: '#1D8FA3', soft: '#E1F3F6' },
+  { key: 'coral', name: 'Corallo', primary: '#F1573A', soft: '#FCE7E3' },
+  { key: 'plum', name: 'Prugna', primary: '#6E42B8', soft: '#EEE6F9' },
+  { key: 'sage', name: 'Salvia', primary: '#2F8F63', soft: '#E2F2E9' },
+  { key: 'indigo', name: 'Blu notte', primary: '#3B4FA0', soft: '#E6E9F6' },
+];
+
+export const DEFAULT_ACCENT_KEY = ACCENT_PALETTE[0].key;
+
+// Exam-selection cards (Fase 3): each exam keeps its own brand identity on
+// the "choose your exam" screen only. Once inside the app, the learner's
+// personal accent color (above) drives the rest of the UI.
 export const examColors: Record<string, { primary: string; secondary: string }> = {
-  Commercialista: { primary: '#0B5D3B', secondary: '#1E88E5' },
-  Avvocato: { primary: '#7A1F2B', secondary: '#B23A48' },
-  'Consulente finanziario': { primary: '#1B3A6B', secondary: '#D4AF37' },
+  Commercialista: { primary: '#2F8F63', secondary: '#1D8FA3' },
+  Avvocato: { primary: '#B23A48', secondary: '#7A1F2B' },
+  'Consulente finanziario': { primary: '#3B4FA0', secondary: '#C79A2E' },
 };
 
 export const defaultExamColor = { primary: colors.success, secondary: colors.textSecondary };
@@ -33,15 +62,15 @@ export const spacing = {
 } as const;
 
 export const radius = {
-  sm: 8,
-  md: 14,
-  lg: 20,
+  sm: 10,
+  md: 16,
+  lg: 22,
   pill: 999,
 } as const;
 
 export const typography = {
-  title: { fontSize: 28, fontWeight: '700' as const },
-  heading: { fontSize: 20, fontWeight: '700' as const },
+  title: { fontSize: 28, fontWeight: '800' as const, letterSpacing: -0.3 },
+  heading: { fontSize: 19, fontWeight: '700' as const },
   body: { fontSize: 16, fontWeight: '400' as const },
-  caption: { fontSize: 13, fontWeight: '500' as const },
+  caption: { fontSize: 13, fontWeight: '600' as const },
 };

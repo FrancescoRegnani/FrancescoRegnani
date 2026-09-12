@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Screen, Title, Body, Heading, Caption, Button, ProgressBar } from '../../components/ui';
 import { useAuth } from '../../lib/auth-context';
+import { useAccent } from '../../lib/accent-context';
 import {
   completeLessonSession,
   fetchLesson,
@@ -18,6 +19,7 @@ type Stage = 'loading' | 'intro' | 'quiz' | 'submitting';
 export default function LessonScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { session, profile, refreshProfile } = useAuth();
+  const { accent } = useAccent();
   const [stage, setStage] = useState<Stage>('loading');
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -43,7 +45,7 @@ export default function LessonScreen() {
   if (stage === 'loading' || !lesson) {
     return (
       <Screen style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={colors.success} />
+        <ActivityIndicator size="large" color={accent.primary} />
       </Screen>
     );
   }
@@ -117,7 +119,7 @@ export default function LessonScreen() {
   if (stage === 'submitting') {
     return (
       <Screen style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={colors.success} />
+        <ActivityIndicator size="large" color={accent.primary} />
       </Screen>
     );
   }

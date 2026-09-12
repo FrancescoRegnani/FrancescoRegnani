@@ -1,8 +1,9 @@
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { Link, router, useFocusEffect } from 'expo-router';
-import { Screen, Title, Body, Heading, Caption, Card, ProgressBar, Button } from '../../components/ui';
+import { Screen, Title, Body, Heading, Caption, Eyebrow, Card, ProgressBar, Button, IconChip } from '../../components/ui';
 import { useAuth } from '../../lib/auth-context';
+import { useAccent } from '../../lib/accent-context';
 import {
   computeUnitReadiness,
   fetchDueLessonIds,
@@ -12,7 +13,7 @@ import {
   fetchNextLesson,
   type NextLessonInfo,
 } from '../../lib/queries';
-import { colors, examColors, defaultExamColor, spacing } from '../../constants/theme';
+import { colors, spacing } from '../../constants/theme';
 import { daysUntil, toDateOnlyISO } from '../../lib/learning';
 
 interface HomeData {
@@ -26,6 +27,7 @@ interface HomeData {
 
 export default function Home() {
   const { session, profile } = useAuth();
+  const { accent } = useAccent();
   const [data, setData] = useState<HomeData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -67,12 +69,11 @@ export default function Home() {
   if (loading || !data || !profile) {
     return (
       <Screen style={{ alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={colors.success} />
+        <ActivityIndicator size="large" color={accent.primary} />
       </Screen>
     );
   }
 
-  const palette = examColors[data.examName] ?? defaultExamColor;
   const dailyGoal = profile.daily_minutes || 1;
   const goalRatio = data.minutesToday / dailyGoal;
   const daysToExam = daysUntil(profile.exam_date, toDateOnlyISO(new Date()));
@@ -81,30 +82,42 @@ export default function Home() {
     <Screen>
       <ScrollView contentContainerStyle={{ gap: spacing.md }} showsVerticalScrollIndicator={false}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Caption>🔥 {profile.current_streak} giorni</Caption>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
+            <IconChip name="flame" size={28} color="#E0781F" background="#FDECD8" />
+            <Caption>{profile.current_streak} giorni</Caption>
+          </View>
           <Caption>{data.examName}</Caption>
         </View>
         <Title>Ciao {profile.name || ''}</Title>
 
         <Card>
-          <Body>Obiettivo di oggi</Body>
-          <Heading>
-            {data.minutesToday} / {dailyGoal} minuti
-          </Heading>
-          <View style={{ marginTop: spacing.sm }}>
-            <ProgressBar ratio={goalRatio} color={palette.primary} />
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <View>
+              <Eyebrow>Obiettivo di oggi</Eyebrow>
+              <Heading style={{ marginTop: spacing.xs }}>
+                {data.minutesToday} / {dailyGoal} minuti
+              </Heading>
+            </View>
+            <IconChip name="time" />
+          </View>
+          <View style={{ marginTop: spacing.md }}>
+            <ProgressBar ratio={goalRatio} />
           </View>
         </Card>
 
         {data.next ? (
-          <Card>
-            <Caption>Continua il percorso</Caption>
-            <Heading style={{ marginTop: spacing.xs }}>{data.next.unit.title}</Heading>
-            <Body style={{ color: colors.textSecondary }}>{data.next.lesson.title}</Body>
+          <Card tinted>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <IconChip name="play" background={colors.surface} />
+              <View style={{ flex: 1 }}>
+                <Eyebrow>Continua il percorso</Eyebrow>
+                <Heading style={{ marginTop: spacing.xs }}>{data.next.unit.title}</Heading>
+                <Body style={{ color: colors.textSecondary }}>{data.next.lesson.title}</Body>
+              </View>
+            </View>
             <View style={{ marginTop: spacing.md }}>
               <Button
                 title="Continua"
-                color={palette.primary}
                 onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: data.next!.lesson.id } })}
               />
             </View>
@@ -118,10 +131,13 @@ export default function Home() {
 
         {data.dueCount > 0 && (
           <Card>
-            <Heading>{data.dueCount} concetti da ripassare</Heading>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <IconChip name="refresh" />
+              <Heading style={{ flex: 1 }}>{data.dueCount} concetti da ripassare</Heading>
+            </View>
             <View style={{ marginTop: spacing.md }}>
               <Link href="/review" asChild>
-                <Button title="Ripassa" variant="secondary" color={palette.primary} />
+                <Button title="Ripassa" variant="secondary" />
               </Link>
             </View>
           </Card>
@@ -129,11 +145,16 @@ export default function Home() {
 
         {data.errorCount > 0 && (
           <Card>
-            <Heading>I tuoi errori</Heading>
-            <Body style={{ color: colors.textSecondary }}>{data.errorCount} domande da rivedere</Body>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <IconChip name="alert-circle" color={colors.danger} background="#FBE6E2" />
+              <View style={{ flex: 1 }}>
+                <Heading>I tuoi errori</Heading>
+                <Body style={{ color: colors.textSecondary }}>{data.errorCount} domande da rivedere</Body>
+              </View>
+            </View>
             <View style={{ marginTop: spacing.md }}>
               <Link href="/errors" asChild>
-                <Button title="Ripara errori" variant="secondary" color={palette.primary} />
+                <Button title="Ripara errori" variant="secondary" />
               </Link>
             </View>
           </Card>
@@ -141,19 +162,28 @@ export default function Home() {
 
         <View style={{ flexDirection: 'row', gap: spacing.md }}>
           <Card style={{ flex: 1 }}>
-            <Caption>XP</Caption>
+            <IconChip name="flash" />
+            <Eyebrow style={{ marginTop: spacing.sm }}>XP</Eyebrow>
             <Heading>{profile.xp}</Heading>
           </Card>
           <Card style={{ flex: 1 }}>
-            <Caption>Readiness</Caption>
+            <IconChip name="speedometer" />
+            <Eyebrow style={{ marginTop: spacing.sm }}>Readiness</Eyebrow>
             <Heading>{data.readiness}%</Heading>
           </Card>
         </View>
 
         {daysToExam !== null && (
           <Card>
-            <Caption>Esame tra</Caption>
-            <Heading>{daysToExam >= 0 ? `${daysToExam} giorni` : 'Data superata'}</Heading>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }}>
+              <IconChip name="calendar" />
+              <View>
+                <Eyebrow>Esame tra</Eyebrow>
+                <Heading style={{ marginTop: spacing.xs }}>
+                  {daysToExam >= 0 ? `${daysToExam} giorni` : 'Data superata'}
+                </Heading>
+              </View>
+            </View>
           </Card>
         )}
       </ScrollView>

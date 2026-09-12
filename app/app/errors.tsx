@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Screen, Title, Body, Heading } from '../components/ui';
+import { Screen, Title, Body, Heading, IconChip } from '../components/ui';
 import { useAuth } from '../lib/auth-context';
+import { useAccent } from '../lib/accent-context';
 import { fetchErrorSummary, type ErrorSummaryItem } from '../lib/queries';
 import { colors, spacing, radius } from '../constants/theme';
 
 export default function ErrorsScreen() {
   const { session } = useAuth();
+  const { accent } = useAccent();
   const [items, setItems] = useState<ErrorSummaryItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -29,7 +31,7 @@ export default function ErrorsScreen() {
       </Pressable>
       <Title>I tuoi errori</Title>
       {loading ? (
-        <ActivityIndicator style={{ marginTop: spacing.xl }} color={colors.success} />
+        <ActivityIndicator style={{ marginTop: spacing.xl }} color={accent.primary} />
       ) : items.length === 0 ? (
         <Body style={{ marginTop: spacing.lg, color: colors.textSecondary }}>
           Nessun errore da ripassare. Ottimo lavoro!
@@ -44,6 +46,7 @@ export default function ErrorsScreen() {
               style={styles.card}
               onPress={() => router.push({ pathname: '/lesson/[id]', params: { id: item.lessonId } })}
             >
+              <IconChip name="alert-circle" color={colors.danger} background="#FBE6E2" />
               <View style={{ flex: 1 }}>
                 <Heading>{item.lessonTitle}</Heading>
                 <Body style={{ color: colors.textSecondary }}>{item.count} errori</Body>
@@ -61,6 +64,7 @@ const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,

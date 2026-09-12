@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -8,14 +9,30 @@ import {
   type PressableProps,
   type ViewStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { colors, radius, spacing, typography } from '../constants/theme';
+import { useAccent } from '../lib/accent-context';
 
 export function Screen({ children, style }: { children: ReactNode; style?: ViewStyle }) {
   return <View style={[styles.screen, style]}>{children}</View>;
 }
 
-export function Card({ children, style }: { children: ReactNode; style?: ViewStyle }) {
-  return <View style={[styles.card, style]}>{children}</View>;
+export function Card({
+  children,
+  style,
+  tinted,
+}: {
+  children: ReactNode;
+  style?: ViewStyle;
+  /** Wash the card with the current accent's soft tone, for a featured card. */
+  tinted?: boolean;
+}) {
+  const { accent } = useAccent();
+  return (
+    <View style={[styles.card, tinted && { backgroundColor: accent.soft, borderColor: 'transparent' }, style]}>
+      {children}
+    </View>
+  );
 }
 
 interface ButtonProps extends PressableProps {
@@ -26,6 +43,8 @@ interface ButtonProps extends PressableProps {
 }
 
 export function Button({ title, variant = 'primary', loading, color, style, disabled, ...rest }: ButtonProps) {
+  const { accent } = useAccent();
+  const tone = color ?? accent.primary;
   const isPrimary = variant === 'primary';
   const isSecondary = variant === 'secondary';
   return (
@@ -34,8 +53,8 @@ export function Button({ title, variant = 'primary', loading, color, style, disa
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.button,
-        isPrimary && { backgroundColor: color ?? colors.success },
-        isSecondary && [styles.buttonSecondary, color ? { borderColor: color } : null],
+        isPrimary && { backgroundColor: tone },
+        isSecondary && [styles.buttonSecondary, { borderColor: tone }],
         variant === 'ghost' && styles.buttonGhost,
         (disabled || loading) && styles.buttonDisabled,
         pressed && !disabled && !loading && styles.buttonPressed,
@@ -44,15 +63,9 @@ export function Button({ title, variant = 'primary', loading, color, style, disa
       {...rest}
     >
       {loading ? (
-        <ActivityIndicator color={isPrimary ? colors.textInverse : (color ?? colors.success)} />
+        <ActivityIndicator color={isPrimary ? colors.textInverse : tone} />
       ) : (
-        <Text
-          style={[
-            styles.buttonText,
-            isPrimary && { color: colors.textInverse },
-            (isSecondary || variant === 'ghost') && { color: color ?? colors.success },
-          ]}
-        >
+        <Text style={[styles.buttonText, isPrimary && { color: colors.textInverse }, !isPrimary && { color: tone }]}>
           {title}
         </Text>
       )}
@@ -76,11 +89,42 @@ export function Caption({ children, style }: { children: ReactNode; style?: obje
   return <Text style={[styles.caption, style]}>{children}</Text>;
 }
 
+/** Small uppercase label for stat tiles and section eyebrows (e.g. "XP", "STREAK"). */
+export function Eyebrow({ children, style }: { children: ReactNode; style?: object }) {
+  return <Text style={[styles.eyebrow, style]}>{children}</Text>;
+}
+
 export function ProgressBar({ ratio, color }: { ratio: number; color?: string }) {
+  const { accent } = useAccent();
   const clamped = Math.max(0, Math.min(1, ratio));
   return (
     <View style={styles.progressTrack}>
-      <View style={[styles.progressFill, { width: `${clamped * 100}%`, backgroundColor: color ?? colors.success }]} />
+      <View style={[styles.progressFill, { width: `${clamped * 100}%`, backgroundColor: color ?? accent.primary }]} />
+    </View>
+  );
+}
+
+/** A small circular tinted badge behind an icon — used on stat tiles and list rows to add color without shouting. */
+export function IconChip({
+  name,
+  color,
+  background,
+  size = 40,
+}: {
+  name: keyof typeof Ionicons.glyphMap;
+  color?: string;
+  background?: string;
+  size?: number;
+}) {
+  const { accent } = useAccent();
+  return (
+    <View
+      style={[
+        styles.iconChip,
+        { width: size, height: size, borderRadius: size / 2, backgroundColor: background ?? accent.soft },
+      ]}
+    >
+      <Ionicons name={name} size={size * 0.52} color={color ?? accent.primary} />
     </View>
   );
 }
@@ -97,6 +141,16 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     borderWidth: 1,
     borderColor: colors.border,
+    ...Platform.select({
+      web: { boxShadow: `0 1px 3px ${colors.shadow}14, 0 1px 2px ${colors.shadow}0d` },
+      default: {
+        shadowColor: colors.shadow,
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 4,
+        elevation: 1,
+      },
+    }),
   },
   button: {
     borderRadius: radius.pill,
@@ -108,7 +162,6 @@ const styles = StyleSheet.create({
   buttonSecondary: {
     backgroundColor: 'transparent',
     borderWidth: 2,
-    borderColor: colors.success,
   },
   buttonGhost: {
     backgroundColor: 'transparent',
@@ -127,6 +180,12 @@ const styles = StyleSheet.create({
   heading: { ...typography.heading, color: colors.textPrimary },
   body: { ...typography.body, color: colors.textPrimary },
   caption: { ...typography.caption, color: colors.textSecondary },
+  eyebrow: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
   progressTrack: {
     height: 10,
     borderRadius: radius.pill,
@@ -136,5 +195,9 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     borderRadius: radius.pill,
+  },
+  iconChip: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
