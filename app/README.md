@@ -41,6 +41,26 @@ Quando in futuro configurerai un vero progetto Supabase (vedi sotto),
 basterà creare il file `.env`: l'app passerà da sola dalla modalità demo al
 database reale, senza toccare codice.
 
+### Anteprima rapida via browser (senza telefono/computer)
+
+Per una prova ancora più veloce, senza nemmeno Node.js, l'app gira anche
+come pagina web (`react-dom` e `react-native-web` sono già tra le
+dipendenze). Per generare un'anteprima statica in un unico file HTML:
+
+```bash
+npx expo export --platform web
+```
+
+Il file `dist/index.html` carica `dist/_expo/static/js/web/entry-*.js`
+tramite `<script src="...">`: per impacchettare tutto in un singolo file
+autonomo (utile per condividerlo come pagina statica), incorpora quel
+bundle in un `<script>` inline nello stesso HTML e converti in data URI
+il font `Ionicons` referenziato in `dist/assets/.../Fonts/Ionicons.*.ttf`
+(è l'unico font-icona effettivamente usato dall'app). Nota: il selettore
+data (`@react-native-community/datetimepicker`) non ha una build per il
+web — su un vero iPhone/Android funziona normalmente, è solo l'anteprima
+browser a non poterlo mostrare.
+
 ## Cosa è già pronto
 
 - Registrazione/login/logout con Supabase Auth (email+password).
