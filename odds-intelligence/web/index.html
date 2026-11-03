@@ -71,6 +71,30 @@ label.check input{accent-color:var(--accent)}
 .rank{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 10px;align-items:start}
 .rank .n{font-family:var(--display);font-size:22px;font-weight:700;color:var(--muted);text-align:right;padding-top:12px;font-variant-numeric:tabular-nums}
 .empty,.err{background:var(--surface);border:1px dashed var(--line);border-radius:6px;padding:20px;color:var(--muted)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
+.seg button{font:500 13px var(--body);border:0;background:transparent;color:var(--muted);padding:6px 12px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.ctl-label{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.builder{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:12px;margin-top:8px}
+.builder .row{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.builder textarea{width:100%;min-height:58px;resize:vertical;font:14px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:8px}
+.btn{font:600 14px var(--body);border-radius:6px;padding:9px 16px;cursor:pointer;border:1px solid var(--ink);background:var(--surface);color:var(--ink)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
+.btn:disabled{opacity:.5;cursor:default}
+.ai-status{font-size:13px;color:var(--muted)}
+.slips{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px;margin-top:14px}
+.slip{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;min-width:0}
+.slip h3{font-family:var(--display);font-size:20px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;margin:0}
+.slip .src{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.leg{border-top:1px dashed var(--line);padding-top:6px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;font-size:13px}
+.leg .ev{font-weight:600;overflow-wrap:anywhere}
+.leg .sub{color:var(--muted);font-size:12px;font-family:var(--mono)}
+.leg .lp{font-family:var(--mono);font-weight:500;text-align:right}
+.combo{display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-top:2px solid var(--ink);padding-top:8px}
+.combo .big{font-family:var(--display);font-size:34px;font-weight:700;color:var(--accent);line-height:1;font-variant-numeric:tabular-nums}
+.combo .q{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.slip p{margin:0;font-size:13px;color:var(--muted)}
 footer{margin-top:36px;font-size:12.5px;color:var(--muted);max-width:75ch;display:flex;flex-direction:column;gap:6px}
 footer code{font-family:var(--mono);font-size:12px}
 @media (max-width:520px){.odds{grid-template-columns:1fr}.pick .pct{font-size:26px}.pick .who{max-width:110px}.match{padding:10px 12px}}
@@ -101,10 +125,11 @@ footer code{font-family:var(--mono);font-size:12px}
     {id:'basket',label:'Basket'},
     {id:'calcio',label:'Calcio'},
     {id:'hockey',label:'Hockey NHL'},
-    {id:'movimenti',label:'Movimenti'}
+    {id:'movimenti',label:'Movimenti'},
+    {id:'schedina',label:'Schedina AI'}
   ];
   var SPORT_NAME={tennis:'Tennis',basket:'Basket',calcio:'Calcio',hockey:'Hockey'};
-  var DATA=null, state={sport:'all',two:false,league:'all'};
+  var DATA=null, state={sport:'all',two:false,league:'all',sort:'time',legs:'2',risk:'equilibrata',ssport:'all',win:'48',ask:'',slips:null,aiBusy:false,aiMsg:''};
   var $=function(id){return document.getElementById(id)};
   var tz='Europe/Rome';
   var fTime=new Intl.DateTimeFormat('it-IT',{timeZone:tz,hour:'2-digit',minute:'2-digit'});
@@ -159,8 +184,18 @@ footer code{font-family:var(--mono);font-size:12px}
   function short(name){if(name==='Pareggio')return 'X';var p=name.split(' ');return p.length>1&&name.length>16?p[p.length-1]:name}
 
   function chip(group,val,label,cur){return '<button type="button" class="chip" data-g="'+group+'" data-v="'+esc(val)+'" aria-pressed="'+(cur===val)+'">'+esc(label)+'</button>'}
+  function seg(group,opts,cur){return '<div class="seg" role="group">'+opts.map(function(o){return '<button type="button" data-g="'+group+'" data-v="'+o[0]+'" aria-pressed="'+(cur===o[0])+'">'+o[1]+'</button>'}).join('')+'</div>'}
+  function sortCtl(withTime){
+    var o=[['desc','Più probabili ↓'],['asc','Meno probabili ↑']];if(withTime)o.unshift(['time','Orario']);
+    return '<span class="ctl-label">Ordina</span>'+seg('sort',o,state.sort);
+  }
+  function sortList(list){
+    if(state.sort==='desc')list.sort(function(a,b){return b.pick.prob-a.pick.prob});
+    else if(state.sort==='asc')list.sort(function(a,b){return a.pick.prob-b.pick.prob});
+    return list;
+  }
   function bindControls(){
-    $('controls').querySelectorAll('.chip').forEach(function(b){b.addEventListener('click',function(){state[b.dataset.g]=b.dataset.v;render()})});
+    $('controls').querySelectorAll('.chip,.seg button').forEach(function(b){b.addEventListener('click',function(){state[b.dataset.g]=b.dataset.v;render()})});
     var t=$('two');if(t)t.addEventListener('change',function(){state.two=t.checked;render()});
   }
   function byDay(list,opts){
@@ -176,11 +211,18 @@ footer code{font-family:var(--mono);font-size:12px}
     if(cur==='top'){
       $('intro').textContent='Gli esiti più probabili di tutte le partite in programma, ordinati per probabilità. Una percentuale alta indica un netto favorito secondo il mercato, non una certezza.';
       ctr='<div class="chips">'+chip('sport','all','Tutti',state.sport)+['tennis','basket','calcio','hockey'].map(function(s){return chip('sport',s,SPORT_NAME[s],state.sport)}).join('')+'</div>'+
-        '<label class="check"><input type="checkbox" id="two"'+(state.two?' checked':'')+'> Solo con due fonti concordi</label>';
+        '<label class="check"><input type="checkbox" id="two"'+(state.two?' checked':'')+'> Solo con due fonti concordi</label>'+
+        '<div class="row" style="display:flex;gap:8px;align-items:center">'+sortCtl(false)+'</div>';
+      if(state.sort==='time')state.sort='desc';
       var list=ev.filter(function(e){return (state.sport==='all'||e.sport===state.sport)&&(!state.two||e.sources.length>1)});
-      list.sort(function(a,b){return b.pick.prob-a.pick.prob});
+      sortList(list);
       list=list.slice(0,40);
       html=list.length?'<div class="list">'+list.map(function(e,i){return '<div class="rank"><div class="n">'+(i+1)+'</div>'+card(e,{sport:true,day:true})+'</div>'}).join('')+'</div>':'<div class="empty">Nessuna partita con questi filtri.</div>';
+    } else if(cur==='schedina'){
+      $('intro').textContent='Componi una schedina da 2 o 3 eventi partendo dalle probabilità reali. La probabilità combinata è il prodotto delle singole: con 3 eventi al 70% ciascuno è circa 34%.';
+      $('controls').innerHTML='';
+      if(document.activeElement&&document.activeElement.id==='ai-ask')return; // don't wipe what the viewer is typing on auto-refresh
+      $('view').innerHTML=slipView();bindSlip();return;
     } else if(cur==='movimenti'){
       $('intro').textContent='Partite in cui la probabilità di un esito è cambiata di almeno '+DATA.move_threshold_pp+' punti tra la quota di apertura e quella attuale. Il dato indica che il mercato si è spostato, non perché.';
       var mv=ev.filter(function(e){return e.movement&&e.movement.flag}).sort(function(a,b){return Math.abs(b.movement.pp)-Math.abs(a.movement.pp)});
@@ -194,19 +236,149 @@ footer code{font-family:var(--mono);font-size:12px}
       var sl=ev.filter(function(e){return e.sport===cur});
       var leagues=[];sl.forEach(function(e){var l=cur==='tennis'?e.league.split(' · ')[0]:e.league;if(leagues.indexOf(l)<0)leagues.push(l)});
       if(leagues.indexOf(state.league)<0&&state.league!=='all')state.league='all';
-      if(leagues.length>1)ctr='<div class="chips">'+chip('league','all','Tutti',state.league)+leagues.map(function(l){return chip('league',l,l,state.league)}).join('')+'</div>';
+      ctr='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">'+sortCtl(true)+'</div>';
+      if(leagues.length>1)ctr+='<div class="chips">'+chip('league','all','Tutti',state.league)+leagues.map(function(l){return chip('league',l,l,state.league)}).join('')+'</div>';
       sl=sl.filter(function(e){return state.league==='all'||e.league===state.league||e.league.indexOf(state.league+' · ')===0});
-      html=sl.length?byDay(sl,{}):'<div class="empty">Nessuna partita con quote disponibili nei prossimi '+DATA.horizon_days+' giorni.</div>';
+      html=!sl.length?'':state.sort==='time'?byDay(sl,{}):'<div class="list">'+sortList(sl).map(function(e,i){return '<div class="rank"><div class="n">'+(i+1)+'</div>'+card(e,{day:true})+'</div>'}).join('')+'</div>';
+      html=html?html:'<div class="empty">Nessuna partita con quote disponibili nei prossimi '+DATA.horizon_days+' giorni.</div>';
     }
     $('controls').innerHTML=ctr;bindControls();
     $('view').innerHTML=html;
+  }
+
+  /* ---------- Schedina: candidate legs, calculator, AI assistant ---------- */
+  var RISK={prudente:{min:.70,target:.85,label:'Prudente'},equilibrata:{min:.55,target:.68,label:'Equilibrata'},audace:{min:.40,target:.52,label:'Audace'}};
+  var SAMPLE=null, sampleState='loading';
+  (function(){
+    try{
+      if(window.claude&&typeof window.claude.use==='function'){
+        window.claude.use('sample').then(function(s){SAMPLE=s;sampleState=s?'ready':'off';if(route()==='schedina')render()},function(){sampleState='off';if(route()==='schedina')render()});
+      } else sampleState='off';
+    }catch(e){sampleState='off'}
+  })();
+  var fShort=new Intl.DateTimeFormat('it-IT',{timeZone:tz,weekday:'short',day:'numeric',month:'short'});
+  function fmtWhen(iso){var d=new Date(iso);return fShort.format(d)+' '+fTime.format(d)}
+  function candidates(){
+    var r=RISK[state.risk],now=Date.now(),lim=state.win==='all'?Infinity:now+(+state.win)*36e5,legs=[];
+    upcoming().forEach(function(e){
+      if(state.ssport!=='all'&&e.sport!==state.ssport)return;
+      if(new Date(e.start).getTime()>lim)return;
+      e.outcomes.forEach(function(o){
+        legs.push({ev:e,market:'Esito finale',sel:o.name==='Pareggio'?'Pareggio (X)':'Vince '+o.name,prob:o.prob,book:o.book_odds||null});
+      });
+      if(e.totals){var L=String(e.totals.line).replace('.',',');
+        legs.push({ev:e,market:'Totale',sel:'Over '+L,prob:e.totals.over,book:null});
+        legs.push({ev:e,market:'Totale',sel:'Under '+L,prob:e.totals.under,book:null});}
+    });
+    legs=legs.filter(function(l){return l.prob>=r.min&&l.prob<.985});
+    legs.sort(function(a,b){return b.prob-a.prob});
+    return legs.slice(0,70).map(function(l,i){l.id='L'+(i+1);return l});
+  }
+  function makeSlip(legs,title,reason,source){
+    var p=1,book=1,allBook=true;legs.forEach(function(l){p*=l.prob;if(l.book)book*=l.book;else allBook=false});
+    return {title:title,reason:reason,source:source,legs:legs,prob:p,fair:1/p,book:allBook?book:null};
+  }
+  function autoSlips(cands,n){
+    // Deterministic: three slips that aim at the risk profile's target per-leg probability, distinct events per slip.
+    var r=RISK[state.risk],out=[],usedSets={};
+    var orders=[
+      ['Più sicura','Le selezioni con la probabilità più alta disponibili.',cands.slice().sort(function(a,b){return b.prob-a.prob})],
+      ['Sul profilo '+r.label.toLowerCase(),'Selezioni vicine alla probabilità tipica del profilo scelto.',cands.slice().sort(function(a,b){return Math.abs(a.prob-r.target)-Math.abs(b.prob-r.target)})],
+      ['Fonti concordi','Preferisce eventi con due fonti di quota e poco scarto tra loro.',cands.slice().sort(function(a,b){return (b.ev.sources.length-a.ev.sources.length)||(b.prob-a.prob)})]
+    ];
+    orders.forEach(function(o){
+      var picked=[],evs={};
+      for(var i=0;i<o[2].length&&picked.length<n;i++){var l=o[2][i];if(evs[l.ev.id])continue;evs[l.ev.id]=1;picked.push(l)}
+      if(picked.length<n)return;
+      var k=picked.map(function(l){return l.id}).sort().join();if(usedSets[k])return;usedSets[k]=1;
+      out.push(makeSlip(picked,o[0],o[1],'Calcolo automatico'));
+    });
+    return out;
+  }
+  function legLine(l){
+    var e=l.ev,m=e.movement&&e.movement.flag&&l.sel.indexOf(e.movement.outcome)>=0?' | movimento '+(e.movement.pp>0?'+':'')+e.movement.pp.toFixed(1)+'pp':'';
+    return l.id+' | evento '+e.id+' | '+SPORT_NAME[e.sport]+' '+e.league+' | '+fmtWhen(e.start)+' | '+e.home+' - '+e.away+' | '+l.market+': '+l.sel+
+      ' | prob '+(l.prob*100).toFixed(1)+'%'+(l.book?' | quota book '+l.book.toFixed(2):'')+' | fonti '+e.sources.length+(e.pick.source_gap_pp!=null?' (scarto '+e.pick.source_gap_pp.toFixed(1)+'pp)':'')+m;
+  }
+  function askAI(){
+    if(!SAMPLE||state.aiBusy)return;
+    var cands=candidates(),n=+state.legs;
+    if(cands.length<n){state.aiMsg='Servono almeno '+n+' selezioni candidate: allarga sport, finestra o profilo.';render();return}
+    var byId={};cands.forEach(function(l){byId[l.id]=l});
+    var prompt='Sei un assistente che compone schedine sportive in italiano partendo SOLO dai dati qui sotto (probabilità di mercato senza margine, già calcolate).\n'+
+      'Compito: proponi 3 schedine diverse tra loro, ciascuna con ESATTAMENTE '+n+' selezioni.\n'+
+      'Regole obbligatorie:\n- usa solo gli id della lista (L1, L2, ...);\n- mai due selezioni dello stesso evento in una schedina;\n- profilo di rischio: '+RISK[state.risk].label+';\n'+
+      '- privilegia probabilità alte, fonti concordi, assenza di movimenti contrari e varietà tra le 3 schedine;\n'+
+      '- "reason": massimo 30 parole, concreto, niente promesse di vincita.\n'+
+      (state.ask.trim()?'Richiesta dell\'utente (rispettala se compatibile con le regole): '+state.ask.trim().slice(0,400)+'\n':'')+
+      'Rispondi solo con JSON in questa forma: {"slips":[{"title":"Titolo breve","legs":["L1","L5"],"reason":"..."}]}\n\nSelezioni disponibili:\n'+
+      cands.map(legLine).join('\n');
+    state.aiBusy=true;state.aiMsg='Claude sta componendo le schedine…';render();
+    SAMPLE.json(prompt,{modelTier:'default'}).then(function(res){
+      var list=(res&&Array.isArray(res.slips))?res.slips:[],out=[];
+      list.forEach(function(sl){
+        if(!sl||!Array.isArray(sl.legs))return;
+        var legs=[],evs={};
+        sl.legs.forEach(function(id){var l=byId[String(id).trim()];if(l&&!evs[l.ev.id]&&legs.length<n){evs[l.ev.id]=1;legs.push(l)}});
+        if(legs.length===n)out.push(makeSlip(legs,String(sl.title||'Proposta AI').slice(0,60),String(sl.reason||'').slice(0,300),'Assistente AI'));
+      });
+      state.aiBusy=false;
+      if(!out.length){state.aiMsg='La risposta non conteneva schedine valide. Riprova o cambia i filtri.';render();return}
+      state.slips=out;state.aiMsg='';render();
+    },function(err){
+      state.aiBusy=false;var c=err&&err.code;
+      if(c==='not_granted'||c==='sampling_disabled'||c==='capability_disabled'||c==='not_declared'||c==='capability_removed'){sampleState='off';state.aiMsg=''}
+      else if(c==='rate_limited')state.aiMsg='Troppe richieste ravvicinate. Riprova tra qualche minuto.';
+      else if(c==='session_expired')state.aiMsg='Accedi di nuovo a claude.ai per usare l\'assistente.';
+      else if(c==='cancelled')state.aiMsg='';
+      else state.aiMsg='L\'assistente non ha risposto ('+(c||'errore')+'). Puoi riprovare.';
+      render();
+    });
+  }
+  function slipCard(sl){
+    return '<article class="slip"><span class="src">'+esc(sl.source)+'</span><h3>'+esc(sl.title)+'</h3>'+
+      sl.legs.map(function(l){var e=l.ev;return '<div class="leg"><span class="ev">'+esc(e.home)+' – '+esc(e.away)+'</span><span class="lp">'+pct(l.prob,1)+'</span>'+
+        '<span class="sub">'+esc(SPORT_NAME[e.sport]+' · '+e.league)+' · '+fmtWhen(e.start)+'</span><span class="sub">'+(l.book?'q. '+n2(l.book):'')+'</span>'+
+        '<span>'+esc(l.market)+': <b>'+esc(l.sel)+'</b></span><span></span></div>'}).join('')+
+      '<div class="combo"><div><div class="ctl-label">Probabilità combinata</div><div class="big">'+pct(sl.prob,1)+'</div></div>'+
+      '<div class="q">quota equa '+n2(sl.fair)+(sl.book?'<br>quota book '+n2(sl.book):'')+'</div></div>'+
+      (sl.reason?'<p>'+esc(sl.reason)+'</p>':'')+'</article>';
+  }
+  function slipView(){
+    var cands=candidates(),n=+state.legs;
+    var auto=autoSlips(cands,n);
+    var aiBox;
+    if(sampleState==='ready')aiBox='<div class="row"><button type="button" class="btn primary" id="ai-go"'+(state.aiBusy?' disabled':'')+'>'+(state.aiBusy?'Sto componendo…':'Chiedi all\'assistente AI')+'</button>'+
+      '<span class="ai-status" role="status">'+esc(state.aiMsg)+'</span></div>';
+    else if(sampleState==='loading')aiBox='<div class="ai-status">Collego l\'assistente AI…</div>';
+    else aiBox='<div class="ai-status">L\'assistente AI funziona nella pagina su claude.ai. Qui sotto trovi comunque le schedine del calcolo automatico.</div>';
+    var html='<div class="builder">'+
+      '<div class="row"><span class="ctl-label">Eventi</span>'+seg('legs',[['2','2'],['3','3']],state.legs)+
+      '<span class="ctl-label">Rischio</span>'+seg('risk',[['prudente','Prudente'],['equilibrata','Equilibrata'],['audace','Audace']],state.risk)+'</div>'+
+      '<div class="row"><span class="ctl-label">Sport</span>'+seg('ssport',[['all','Tutti'],['tennis','Tennis'],['basket','Basket'],['calcio','Calcio'],['hockey','Hockey']],state.ssport)+'</div>'+
+      '<div class="row"><span class="ctl-label">Entro</span>'+seg('win',[['24','24 ore'],['48','48 ore'],['all','4 giorni']],state.win)+
+      '<span class="ai-status">'+cands.length+' selezioni candidate (probabilità ≥ '+pct(RISK[state.risk].min)+')</span></div>'+
+      (sampleState==='ready'?'<label for="ai-ask" class="ctl-label">Richiesta per l\'assistente (facoltativa)</label><textarea id="ai-ask" placeholder="Es.: solo partite di stasera, niente pareggi, includi un Over">'+esc(state.ask)+'</textarea>':'')+
+      aiBox+'</div>';
+    if(state.slips&&state.slips.length&&state.slips[0].legs.length===n){
+      html+='<h2 class="day">Proposte dell\'assistente</h2><div class="slips">'+state.slips.map(slipCard).join('')+'</div>';
+    }
+    html+='<h2 class="day">Calcolo automatico</h2>'+(auto.length?'<div class="slips">'+auto.map(slipCard).join('')+'</div>':'<div class="empty">Non ci sono abbastanza selezioni con questi filtri. Allarga la finestra, cambia sport o scegli un profilo più audace.</div>')+
+      '<p class="intro" style="margin-top:14px">La probabilità combinata assume eventi indipendenti. Le quote book sono quelle DraftKings, quando disponibili per tutte le selezioni; per Over/Under e Polymarket si mostra solo la quota equa. Nessuna schedina è una previsione certa.</p>';
+    return html;
+  }
+  function bindSlip(){
+    $('view').querySelectorAll('.seg button').forEach(function(b){b.addEventListener('click',function(){
+      state[b.dataset.g]=b.dataset.v;if(b.dataset.g==='legs')state.slips=null;render()})});
+    var t=$('ai-ask');if(t)t.addEventListener('input',function(){state.ask=t.value});
+    var g=$('ai-go');if(g)g.addEventListener('click',askAI);
   }
 
   window.addEventListener('hashchange',function(){state.league='all';render();window.scrollTo(0,0)});
   renderTabs(route());
 
   /* ---------- Live collector (same rules as app/collector.py) ---------- */
-  var LIVE_URL='https://francescoregnani.github.io/FrancescoRegnani/';
+  var LIVE_URL=''; // set to the public live site once it is published
   var REFRESH_MS=120000, DAYS=4, MOVE_PP=4, MAX_SPREAD=0.10, MIN_LIQ=500;
   var ESPN_LEAGUES=[['basket','NBA','basketball/nba'],['hockey','NHL','hockey/nhl'],['calcio','Serie A','soccer/ita.1'],['calcio','Premier League','soccer/eng.1'],['calcio','LaLiga','soccer/esp.1'],['calcio','Bundesliga','soccer/ger.1'],['calcio','Ligue 1','soccer/fra.1'],['calcio','Champions League','soccer/uefa.champions'],['calcio','Europa League','soccer/uefa.europa'],['calcio','Conference League','soccer/uefa.europa.conf']];
   var POLY_SERIES={atp:'10365',wta:'10366',nba:'10345',nhl:'10346'};
@@ -313,7 +485,7 @@ footer code{font-family:var(--mono);font-size:12px}
   function showSnapshotNotice(){
     if(document.getElementById('livebar'))return;
     var d=document.createElement('div');d.id='livebar';d.className='empty';d.style.marginTop='14px';
-    d.innerHTML='Questa è un\'istantanea: qui le quote non possono essere scaricate in diretta. <a href="'+LIVE_URL+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Apri la versione live</a>, che si aggiorna da sola ogni 2 minuti.';
+    d.innerHTML='Questa è un\'istantanea delle quote: in questa pagina non possono essere scaricate in diretta.'+(LIVE_URL?' <a href="'+LIVE_URL+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Apri la versione live</a>, che si aggiorna da sola ogni 2 minuti.':'');
     $('intro').parentNode.insertBefore(d,$('intro'));
   }
   function load(manual){
