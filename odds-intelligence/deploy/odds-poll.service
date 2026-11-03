@@ -1,0 +1,10 @@
+[Unit]
+Description=Odds Intelligence quote collection
+After=network-online.target
+[Service]
+Type=oneshot
+User=odds
+WorkingDirectory=/opt/odds-intelligence
+EnvironmentFile=/opt/odds-intelligence/.env
+ExecStart=/opt/odds-intelligence/.venv/bin/python -m app.provider
+NoNewPrivileges=true

@@ -1,0 +1,217 @@
+<title>Odds Intelligence</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: scoreboard rail of sport tabs, then a dense list of match rows; each row is a probability bar. */
+:root{
+  --bg:#EEF2F0; --surface:#FFFFFF; --ink:#13201B; --muted:#5A6A63; --line:#D7DFDB;
+  --accent:#0B6B4D; --accent-soft:#DCEFE6; --amber:#A65F00; --amber-soft:#FBEBD3;
+  --bar-2:#9FB3AA; --bar-3:#C9D5CF;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0D1412; --surface:#151F1B; --ink:#E4EDE9; --muted:#93A39C; --line:#25332D;
+  --accent:#43C08D; --accent-soft:#183A2D; --amber:#E7A447; --amber-soft:#3A2A12;
+  --bar-2:#4F625A; --bar-3:#33433C; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0D1412; --surface:#151F1B; --ink:#E4EDE9; --muted:#93A39C; --line:#25332D;
+  --accent:#43C08D; --accent-soft:#183A2D; --amber:#E7A447; --amber-soft:#3A2A12;
+  --bar-2:#4F625A; --bar-3:#33433C; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45}
+.wrap{max-width:1040px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px}
+h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,6vw,44px);letter-spacing:.01em;line-height:1;margin:0;text-transform:uppercase}
+h1 span{color:var(--accent)}
+.stamp{font-family:var(--mono);font-size:12px;color:var(--muted);text-align:right}
+.stamp b{color:var(--ink);font-weight:500}
+nav.rail{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);margin-top:18px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+nav.rail::-webkit-scrollbar{display:none}
+.tabs{display:flex;gap:4px;min-width:max-content}
+.tab{font-family:var(--display);font-size:19px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);text-decoration:none;padding:10px 12px 8px;border-bottom:3px solid transparent;display:flex;gap:6px;align-items:baseline}
+.tab:hover{color:var(--ink)}
+.tab[aria-current="page"]{color:var(--ink);border-bottom-color:var(--accent)}
+.tab small{font-family:var(--mono);font-size:11px;font-weight:400;letter-spacing:0}
+.tab:focus-visible,.chip:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.intro{color:var(--muted);max-width:68ch;margin:16px 0 0;font-size:14px}
+.controls{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;margin:16px 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font:500 13px var(--body);border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:5px 12px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+label.check{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted);cursor:pointer}
+label.check input{accent-color:var(--accent)}
+.day{font-family:var(--display);font-size:20px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;margin:26px 0 8px;color:var(--muted)}
+.list{display:flex;flex-direction:column;gap:8px}
+.match{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px 14px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px}
+.meta{font-family:var(--mono);font-size:12px;color:var(--muted);display:flex;flex-wrap:wrap;gap:4px 10px;grid-column:1/-1}
+.meta .lg{color:var(--ink)}
+.names{font-weight:600;font-size:16px;min-width:0;overflow-wrap:anywhere}
+.names .vs{color:var(--muted);font-weight:400;padding:0 4px}
+.pick{text-align:right;white-space:nowrap}
+.pick .pct{font-family:var(--display);font-size:30px;font-weight:700;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
+.pick .who{display:block;font-size:12px;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis}
+.bar{grid-column:1/-1;display:flex;height:22px;border-radius:3px;overflow:hidden;font-family:var(--mono);font-size:11px}
+.bar div{display:flex;align-items:center;padding:0 6px;white-space:nowrap;overflow:hidden;color:var(--ink);min-width:0}
+.bar .s0{background:var(--accent);color:var(--surface)}
+.bar .s1{background:var(--bar-2)}
+.bar .s2{background:var(--bar-3)}
+.odds{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:4px 12px;font-size:12.5px}
+.odds div{display:flex;justify-content:space-between;gap:8px;border-top:1px dashed var(--line);padding-top:4px;min-width:0}
+.odds span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.tags{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:11.5px;border-radius:3px;padding:2px 7px;background:var(--bg);color:var(--muted);border:1px solid var(--line)}
+.tag.src2{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.tag.move{background:var(--amber-soft);color:var(--amber);border-color:transparent;font-weight:600}
+.band-alta{color:var(--accent)} .band-media{color:var(--ink)} .band-bassa{color:var(--muted)}
+.rank{display:grid;grid-template-columns:2.2em minmax(0,1fr);gap:0 10px;align-items:start}
+.rank .n{font-family:var(--display);font-size:22px;font-weight:700;color:var(--muted);text-align:right;padding-top:12px;font-variant-numeric:tabular-nums}
+.empty,.err{background:var(--surface);border:1px dashed var(--line);border-radius:6px;padding:20px;color:var(--muted)}
+footer{margin-top:36px;font-size:12.5px;color:var(--muted);max-width:75ch;display:flex;flex-direction:column;gap:6px}
+footer code{font-family:var(--mono);font-size:12px}
+@media (max-width:520px){.pick .pct{font-size:26px}.pick .who{max-width:110px}.match{padding:10px 12px}}
+@media (prefers-reduced-motion:no-preference){.bar div{transition:flex-basis .3s}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <h1>Odds <span>Intelligence</span></h1>
+    <div class="stamp" id="stamp">Caricamento quote…</div>
+  </header>
+  <nav class="rail" aria-label="Sezioni"><div class="tabs" id="tabs"></div></nav>
+  <p class="intro" id="intro"></p>
+  <div class="controls" id="controls"></div>
+  <main id="view"><div class="empty">Carico le quote pre-partita…</div></main>
+  <footer>
+    <div><b>Come leggere le percentuali.</b> Ogni percentuale è la probabilità implicita nelle quote, senza il margine del bookmaker (quote normalizzate a 100%). Dove ci sono due fonti (DraftKings e Polymarket) si mostra la media. La "quota equa" è 1 / probabilità.</div>
+    <div><b>Movimento</b>: variazione della probabilità tra quota di apertura e quota attuale DraftKings, segnalata da <span id="thr">4</span> punti percentuali in su. Un movimento non spiega la sua causa e non indica da solo dove va il denaro.</div>
+    <div>Fonti: quote DraftKings tramite ESPN (NBA, NHL, calcio) e prezzi Polymarket (tennis ATP/WTA, e seconda fonte per NBA/NHL). Sono stime di mercato, non garanzie di risultato. Il gioco è vietato ai minori di 18 anni e può creare dipendenza.</div>
+  </footer>
+</div>
+
+<script>
+(function(){
+  var SPORTS=[
+    {id:'top',label:'Più probabili'},
+    {id:'tennis',label:'Tennis'},
+    {id:'basket',label:'Basket'},
+    {id:'calcio',label:'Calcio'},
+    {id:'hockey',label:'Hockey NHL'},
+    {id:'movimenti',label:'Movimenti'}
+  ];
+  var SPORT_NAME={tennis:'Tennis',basket:'Basket',calcio:'Calcio',hockey:'Hockey'};
+  var DATA=null, state={sport:'all',two:false,league:'all'};
+  var $=function(id){return document.getElementById(id)};
+  var tz='Europe/Rome';
+  var fTime=new Intl.DateTimeFormat('it-IT',{timeZone:tz,hour:'2-digit',minute:'2-digit'});
+  var fDay=new Intl.DateTimeFormat('it-IT',{timeZone:tz,weekday:'long',day:'numeric',month:'long'});
+  var fStamp=new Intl.DateTimeFormat('it-IT',{timeZone:tz,day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+  function pct(p,d){return (p*100).toFixed(d==null?0:d).replace('.',',')+'%'}
+  function n2(x){return x==null?'—':x.toFixed(2).replace('.',',')}
+  function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function route(){var h=(location.hash||'').slice(1);return SPORTS.some(function(s){return s.id===h})?h:'top'}
+  function upcoming(){var now=Date.now();return DATA.events.filter(function(e){return new Date(e.start).getTime()>now})}
+
+  function renderTabs(cur){
+    var ev=DATA?upcoming():[];
+    $('tabs').innerHTML=SPORTS.map(function(s){
+      var c='';
+      if(DATA){
+        if(SPORT_NAME[s.id]) c=ev.filter(function(e){return e.sport===s.id}).length;
+        else if(s.id==='movimenti') c=ev.filter(function(e){return e.movement&&e.movement.flag}).length;
+      }
+      return '<a class="tab" href="#'+s.id+'"'+(s.id===cur?' aria-current="page"':'')+'>'+s.label+(c!==''?' <small>'+c+'</small>':'')+'</a>';
+    }).join('');
+  }
+
+  function card(e,opts){
+    opts=opts||{};
+    var outs=e.outcomes.slice().sort(function(a,b){return b.prob-a.prob});
+    var bar=outs.map(function(o,i){
+      return '<div class="s'+i+'" style="flex:0 0 '+(o.prob*100).toFixed(2)+'%" title="'+esc(o.name)+' '+pct(o.prob,1)+'">'+(o.prob>=.12?esc(short(o.name))+' '+pct(o.prob):'')+'</div>';
+    }).join('');
+    var odds=e.outcomes.map(function(o){
+      return '<div><span>'+esc(o.name)+'</span><span class="num">'+pct(o.prob,1)+' · equa '+n2(o.fair_odds)+(o.book_odds?' · book '+n2(o.book_odds):'')+'</span></div>';
+    }).join('');
+    var tags=[];
+    tags.push('<span class="tag'+(e.sources.length>1?' src2':'')+'">'+e.sources.map(function(s){return esc(s.name)}).join(' + ')+'</span>');
+    if(e.pick.source_gap_pp!=null) tags.push('<span class="tag">scarto fonti '+e.pick.source_gap_pp.toFixed(1).replace('.',',')+' pp</span>');
+    if(e.margin_pct!=null) tags.push('<span class="tag">margine book '+e.margin_pct.toFixed(1).replace('.',',')+'%</span>');
+    if(e.totals) tags.push('<span class="tag">Over '+String(e.totals.line).replace('.',',')+': '+pct(e.totals.over)+' · Under '+pct(e.totals.under)+'</span>');
+    var pm=e.sources.filter(function(s){return s.name==='Polymarket'})[0];
+    if(pm&&pm.liquidity) tags.push('<span class="tag">liquidità Polymarket $'+pm.liquidity.toLocaleString('it-IT')+'</span>');
+    if(e.movement&&e.movement.flag){
+      var m=e.movement, up=m.pp>0;
+      tags.push('<span class="tag move">'+(up?'▲':'▼')+' '+esc(short(m.outcome))+' '+(up?'+':'')+m.pp.toFixed(1).replace('.',',')+' pp (quota '+n2(m.open_odds)+' → '+n2(m.close_odds)+')</span>');
+    }
+    var when=new Date(e.start);
+    var meta='<span class="lg">'+(opts.sport?SPORT_NAME[e.sport]+' · ':'')+esc(e.league)+'</span><span>'+(opts.day?fDay.format(when)+' ':'')+fTime.format(when)+'</span>';
+    return '<article class="match"><div class="meta">'+meta+'</div>'+
+      '<div class="names">'+esc(e.home)+'<span class="vs">–</span>'+esc(e.away)+'</div>'+
+      '<div class="pick"><span class="pct band-'+e.pick.band+'">'+pct(e.pick.prob)+'</span><span class="who">'+esc(e.pick.name)+' · fiducia '+e.pick.band+'</span></div>'+
+      '<div class="bar" role="img" aria-label="'+esc(outs.map(function(o){return o.name+' '+pct(o.prob,1)}).join(', '))+'">'+bar+'</div>'+
+      '<div class="odds">'+odds+'</div><div class="tags">'+tags.join('')+'</div></article>';
+  }
+  function short(name){if(name==='Pareggio')return 'X';var p=name.split(' ');return p.length>1&&name.length>16?p[p.length-1]:name}
+
+  function chip(group,val,label,cur){return '<button type="button" class="chip" data-g="'+group+'" data-v="'+esc(val)+'" aria-pressed="'+(cur===val)+'">'+esc(label)+'</button>'}
+  function bindControls(){
+    $('controls').querySelectorAll('.chip').forEach(function(b){b.addEventListener('click',function(){state[b.dataset.g]=b.dataset.v;render()})});
+    var t=$('two');if(t)t.addEventListener('change',function(){state.two=t.checked;render()});
+  }
+  function byDay(list,opts){
+    var out='',last='';
+    list.forEach(function(e){var d=fDay.format(new Date(e.start));if(d!==last){if(last)out+='</div>';out+='<h2 class="day">'+d+'</h2><div class="list">';last=d}out+=card(e,opts)});
+    return out?out+'</div>':'';
+  }
+
+  function render(){
+    var cur=route();renderTabs(cur);
+    if(!DATA)return;
+    var ev=upcoming(), html='', ctr='';
+    if(cur==='top'){
+      $('intro').textContent='Gli esiti più probabili di tutte le partite in programma, ordinati per probabilità. Una percentuale alta indica un netto favorito secondo il mercato, non una certezza.';
+      ctr='<div class="chips">'+chip('sport','all','Tutti',state.sport)+['tennis','basket','calcio','hockey'].map(function(s){return chip('sport',s,SPORT_NAME[s],state.sport)}).join('')+'</div>'+
+        '<label class="check"><input type="checkbox" id="two"'+(state.two?' checked':'')+'> Solo con due fonti concordi</label>';
+      var list=ev.filter(function(e){return (state.sport==='all'||e.sport===state.sport)&&(!state.two||e.sources.length>1)});
+      list.sort(function(a,b){return b.pick.prob-a.pick.prob});
+      list=list.slice(0,40);
+      html=list.length?'<div class="list">'+list.map(function(e,i){return '<div class="rank"><div class="n">'+(i+1)+'</div>'+card(e,{sport:true,day:true})+'</div>'}).join('')+'</div>':'<div class="empty">Nessuna partita con questi filtri.</div>';
+    } else if(cur==='movimenti'){
+      $('intro').textContent='Partite in cui la probabilità di un esito è cambiata di almeno '+DATA.move_threshold_pp+' punti tra la quota di apertura e quella attuale. Il dato indica che il mercato si è spostato, non perché.';
+      var mv=ev.filter(function(e){return e.movement&&e.movement.flag}).sort(function(a,b){return Math.abs(b.movement.pp)-Math.abs(a.movement.pp)});
+      html=mv.length?'<div class="list">'+mv.map(function(e){return card(e,{sport:true,day:true})}).join('')+'</div>':'<div class="empty">Nessun movimento sopra soglia nelle partite in programma.</div>';
+    } else {
+      var intro={tennis:'Partite ATP e WTA (tornei principali e Challenger) dai prezzi Polymarket. Solo mercati con spread denaro-lettera fino a 10 centesimi.',
+        basket:'Partite NBA. Quote DraftKings di apertura e attuali; dove disponibile anche Polymarket come seconda fonte.',
+        calcio:'Serie A, Premier League, LaLiga, Bundesliga, Ligue 1 e coppe europee. Esito 1X2 dalle quote DraftKings, più la linea Over/Under.',
+        hockey:'Partite NHL. Moneyline DraftKings e Polymarket, più la linea dei gol totali.'}[cur];
+      $('intro').textContent=intro;
+      var sl=ev.filter(function(e){return e.sport===cur});
+      var leagues=[];sl.forEach(function(e){var l=cur==='tennis'?e.league.split(' · ')[0]:e.league;if(leagues.indexOf(l)<0)leagues.push(l)});
+      if(leagues.indexOf(state.league)<0&&state.league!=='all')state.league='all';
+      if(leagues.length>1)ctr='<div class="chips">'+chip('league','all','Tutti',state.league)+leagues.map(function(l){return chip('league',l,l,state.league)}).join('')+'</div>';
+      sl=sl.filter(function(e){return state.league==='all'||e.league===state.league||e.league.indexOf(state.league+' · ')===0});
+      html=sl.length?byDay(sl,{}):'<div class="empty">Nessuna partita con quote disponibili nei prossimi '+DATA.horizon_days+' giorni.</div>';
+    }
+    $('controls').innerHTML=ctr;bindControls();
+    $('view').innerHTML=html;
+  }
+
+  window.addEventListener('hashchange',function(){state.league='all';render();window.scrollTo(0,0)});
+  renderTabs(route());
+  fetch('data.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).then(function(d){
+    DATA=d;
+    $('thr').textContent=d.move_threshold_pp;
+    $('stamp').innerHTML='Quote aggiornate al <b>'+fStamp.format(new Date(d.generated_at))+'</b><br>'+upcoming().length+' partite · ora italiana';
+    render();
+  }).catch(function(err){
+    $('stamp').textContent='Quote non disponibili';
+    $('view').innerHTML='<div class="err">Non riesco a leggere il file delle quote ('+esc(err.message)+'). Ricarica la pagina; se il problema resta, il file data.json non è stato pubblicato.</div>';
+  });
+})();
+</script>

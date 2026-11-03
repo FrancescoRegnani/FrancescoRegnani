@@ -1,0 +1,13 @@
+[Unit]
+Description=Odds Intelligence API
+After=network-online.target
+[Service]
+Type=simple
+User=odds
+WorkingDirectory=/opt/odds-intelligence
+EnvironmentFile=/opt/odds-intelligence/.env
+ExecStart=/opt/odds-intelligence/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8088
+Restart=on-failure
+NoNewPrivileges=true
+[Install]
+WantedBy=multi-user.target
