@@ -52,6 +52,12 @@ label.check input{accent-color:var(--accent)}
 .names{font-weight:600;font-size:16px;min-width:0;overflow-wrap:anywhere}
 .names .vs{color:var(--muted);font-weight:400;padding:0 4px}
 .pick{text-align:right;white-space:nowrap}
+@keyframes flashUp{from{background:var(--accent-soft)}to{background:transparent}}
+@keyframes flashDown{from{background:var(--amber-soft)}to{background:transparent}}
+.pct.up{animation:flashUp 1.6s ease-out}.pct.down{animation:flashDown 1.6s ease-out}
+.delta{font-family:var(--mono);font-size:11px;display:block}
+.delta.up{color:var(--accent)}.delta.down{color:var(--amber)}
+@media (prefers-reduced-motion:reduce){.pct.up,.pct.down{animation:none}}
 .pick .pct{font-family:var(--display);font-size:30px;font-weight:700;line-height:1;color:var(--accent);font-variant-numeric:tabular-nums}
 .pick .who{display:block;font-size:12px;color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis}
 .bar{grid-column:1/-1;display:flex;height:22px;border-radius:3px;overflow:hidden;font-family:var(--mono);font-size:11px}
@@ -177,7 +183,7 @@ footer code{font-family:var(--mono);font-size:12px}
     var meta=(e.snapshot?'<span class="tag move">istantanea, non live</span>':'')+'<span class="lg">'+(opts.sport?SPORT_NAME[e.sport]+' · ':'')+esc(e.league)+'</span><span>'+(opts.day?fDay.format(when)+' ':'')+fTime.format(when)+'</span>';
     return '<article class="match"><div class="meta">'+meta+'</div>'+
       '<div class="names">'+esc(e.home)+'<span class="vs">–</span>'+esc(e.away)+'</div>'+
-      '<div class="pick"><span class="pct band-'+e.pick.band+'">'+pct(e.pick.prob)+'</span><span class="who">'+esc(e.pick.name)+' · fiducia '+e.pick.band+'</span></div>'+
+      '<div class="pick"><span class="pct band-'+e.pick.band+(FLASH[e.id]?' '+FLASH[e.id]:'')+'">'+pct(e.pick.prob)+'</span><span class="who">'+esc(e.pick.name)+' · fiducia '+e.pick.band+'</span>'+sessionDelta(e)+'</div>'+
       '<div class="bar" role="img" aria-label="'+esc(outs.map(function(o){return o.name+' '+pct(o.prob,1)}).join(', '))+'">'+bar+'</div>'+
       '<div class="odds">'+odds+'</div><div class="tags">'+tags.join('')+'</div></article>';
   }
@@ -379,7 +385,7 @@ footer code{font-family:var(--mono);font-size:12px}
 
   /* ---------- Live collector (same rules as app/collector.py) ---------- */
   var LIVE_URL=''; // set to the public live site once it is published
-  var REFRESH_MS=120000, DAYS=4, MOVE_PP=4, MAX_SPREAD=0.10, MIN_LIQ=500;
+  var REFRESH_MS=60000, PRICE_MS=3000, DAYS=4, MOVE_PP=4, MAX_SPREAD=0.10, MIN_LIQ=500;
   var ESPN_LEAGUES=[['basket','NBA','basketball/nba'],['hockey','NHL','hockey/nhl'],['calcio','Serie A','soccer/ita.1'],['calcio','Premier League','soccer/eng.1'],['calcio','LaLiga','soccer/esp.1'],['calcio','Bundesliga','soccer/ger.1'],['calcio','Ligue 1','soccer/fra.1'],['calcio','Champions League','soccer/uefa.champions'],['calcio','Europa League','soccer/uefa.europa'],['calcio','Conference League','soccer/uefa.europa.conf']];
   var POLY_SERIES={atp:'10365',wta:'10366',nba:'10345',nhl:'10346'};
   function american(o){var v=parseFloat(String(o).replace('+',''));if(!isFinite(v)||Math.abs(v)<100)return null;return v>0?1+v/100:1+100/-v}
@@ -423,9 +429,10 @@ footer code{font-family:var(--mono);font-size:12px}
     if(prices.some(function(p){return p<=.01||p>=.99}))return null;
     var liq=+(m.liquidityNum||0);if(liq<MIN_LIQ)return null;
     var raw={};raw[names[0]]=prices[0];raw[names[1]]=prices[1];
+    var tok=null;try{var ids=JSON.parse(m.clobTokenIds);if(ids.length===2){tok={};tok[names[0]]=ids[0];tok[names[1]]=ids[1]}}catch(err){}
     var title=e.title||'',tour=title.indexOf(':')>0?title.split(':')[0].trim():league;
     return {id:'poly:'+e.id,sport:sport,league:sport==='tennis'?league+' · '+tour:league,start:start.toISOString(),home:names[0],away:names[1],order:names,
-      book:null,margin_pct:null,sources:[{name:'Polymarket',probs:norm(raw),liquidity:Math.round(liq)}],movement:null,totals:null};
+      book:null,margin_pct:null,sources:[{name:'Polymarket',probs:norm(raw),liquidity:Math.round(liq),tokens:tok}],movement:null,totals:null};
   }
   function attach(records,poly){
     var idx={},used=new Set(),joined=0;
@@ -434,9 +441,10 @@ footer code{font-family:var(--mono);font-size:12px}
       if(r.sport!=='basket'&&r.sport!=='hockey')return;
       var pair=[key(r.short[r.home]),key(r.short[r.away])].sort().join('|');
       for(var d=0;d<3;d++){var delta=[0,-1,1][d],day=new Date(new Date(r.start).getTime()+delta*864e5).toISOString().slice(0,10),p=idx[day+'|'+pair];
-        if(p&&!used.has(p)){var bk={},pr={};for(var n in p.sources[0].probs)bk[key(n)]=p.sources[0].probs[n];
+        if(p&&!used.has(p)){var bk={},bt={},pr={},tk=null,ps=p.sources[0];for(var n in ps.probs){bk[key(n)]=ps.probs[n];if(ps.tokens)bt[key(n)]=ps.tokens[n]}
           pr[r.home]=bk[key(r.short[r.home])];pr[r.away]=bk[key(r.short[r.away])];
-          r.sources.push({name:'Polymarket',probs:pr,liquidity:p.sources[0].liquidity});used.add(p);joined++;break}}
+          if(ps.tokens){tk={};tk[r.home]=bt[key(r.short[r.home])];tk[r.away]=bt[key(r.short[r.away])]}
+          r.sources.push({name:'Polymarket',probs:pr,liquidity:ps.liquidity,tokens:tk});used.add(p);joined++;break}}
     });
     return {joined:joined,rest:poly.filter(function(p){return !used.has(p)})};
   }
@@ -472,12 +480,53 @@ footer code{font-family:var(--mono);font-size:12px}
     });
   }
 
-  var timer=null,busy=false;
+  var timer=null,busy=false,priceTimer=null,priceBusy=false,FLASH={},BASE={};
+  function remember(){ // probability of each pick when the viewer first saw it, for the in-session change
+    DATA.events.forEach(function(e){var k=e.id+'|'+e.pick.name;if(BASE[k]==null)BASE[k]=e.pick.prob});
+  }
+  function sessionDelta(e){
+    var b=BASE[e.id+'|'+e.pick.name];if(b==null)return '';var d=(e.pick.prob-b)*100;if(Math.abs(d)<0.5)return '';
+    return '<span class="delta '+(d>0?'up':'down')+'">'+(d>0?'▲ +':'▼ ')+d.toFixed(1).replace('.',',')+' pp da quando sei qui</span>';
+  }
+  function markFlashes(prev){
+    FLASH={};DATA.events.forEach(function(e){var o=prev[e.id];if(o==null)return;var d=e.pick.prob-o;if(Math.abs(d)>=0.0005)FLASH[e.id]=d>0?'up':'down'});
+  }
+  function snapshotProbs(){var m={};if(DATA)DATA.events.forEach(function(e){m[e.id]=e.pick.prob});return m}
+  function priceTick(){
+    // Fast path: one batched request for the live mid price of every Polymarket market on screen.
+    if(!DATA||!DATA.live||busy||priceBusy||document.hidden)return;
+    var refs=[];DATA.events.forEach(function(e){e.sources.forEach(function(s){if(s.tokens)for(var n in s.tokens)if(s.tokens[n])refs.push(s.tokens[n])})});
+    if(!refs.length)return;
+    priceBusy=true;var chunks=[];for(var i=0;i<refs.length;i+=300)chunks.push(refs.slice(i,i+300));
+    Promise.all(chunks.map(function(c){
+      return fetch('https://clob.polymarket.com/midpoints',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(c.map(function(t){return {token_id:t}}))})
+        .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});
+    })).then(function(parts){
+      var mid={};parts.forEach(function(p){for(var k in p)mid[k]=parseFloat(p[k])});
+      var prev=snapshotProbs(),changed=false;
+      DATA.events.forEach(function(e){
+        var touched=false;
+        e.sources.forEach(function(s){
+          if(!s.tokens)return;var raw={},ok=true;
+          for(var n in s.tokens){var v=mid[s.tokens[n]];if(!(v>0&&v<1)){ok=false;break}raw[n]=v}
+          if(!ok)return;var np=norm(raw);
+          for(var n2 in np)if(Math.abs(np[n2]-(s.probs[n2]||0))>=0.0005){touched=true}
+          s.probs=np;
+        });
+        if(touched){finalize(e);changed=true}
+      });
+      DATA.pricesAt=new Date().toISOString();DATA.priceErr=false;
+      if(changed){markFlashes(prev);render();FLASH={}}
+      setStamp();
+    }).catch(function(){DATA.priceErr=true;setStamp()}).then(function(){priceBusy=false});
+  }
   function setStamp(){
     if(!DATA)return;
     var t=new Date(DATA.generated_at);
-    var fmt=DATA.live?new Intl.DateTimeFormat('it-IT',{timeZone:tz,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(t):fStamp.format(t);
-    $('stamp').innerHTML=(DATA.live?'<span style="color:var(--accent)">● Live</span> · aggiornate alle <b>'+fmt+'</b>':'Istantanea del <b>'+fmt+'</b>')+
+    var fSec=new Intl.DateTimeFormat('it-IT',{timeZone:tz,hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    if(DATA.live&&DATA.pricesAt&&new Date(DATA.pricesAt)>t)t=new Date(DATA.pricesAt);
+    var fmt=DATA.live?fSec.format(t):fStamp.format(t);
+    $('stamp').innerHTML=(DATA.live?'<span style="color:var(--accent)">● Live</span> · prezzi alle <b>'+fmt+'</b>'+(DATA.priceErr?' (ritardo)':'')+'<br>prezzi ogni '+PRICE_MS/1000+' s · partite e DraftKings ogni '+REFRESH_MS/1000+' s':'Istantanea del <b>'+fmt+'</b>')+
       '<br>'+upcoming().length+' partite · ora italiana'+(DATA.live?' · <button type="button" id="refresh" class="chip" style="padding:1px 8px;font-size:11px">Aggiorna</button>':'')+
       (DATA.live&&DATA.espnOk===0?'<br>Quote DraftKings non raggiungibili: calcio da istantanea'+(DATA.snapshotAt?' del '+fStamp.format(new Date(DATA.snapshotAt)):''):'');
     var b=$('refresh');if(b)b.addEventListener('click',function(){load(true)});
@@ -485,7 +534,7 @@ footer code{font-family:var(--mono);font-size:12px}
   function showSnapshotNotice(){
     if(document.getElementById('livebar'))return;
     var d=document.createElement('div');d.id='livebar';d.className='empty';d.style.marginTop='14px';
-    d.innerHTML='Questa è un\'istantanea delle quote: in questa pagina non possono essere scaricate in diretta.'+(LIVE_URL?' <a href="'+LIVE_URL+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Apri la versione live</a>, che si aggiorna da sola ogni 2 minuti.':'');
+    d.innerHTML='Questa è un\'istantanea delle quote: in questa pagina non possono essere scaricate in diretta.'+(LIVE_URL?' <a href="'+LIVE_URL+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Apri la versione live</a>, che si aggiorna da sola ogni pochi secondi.':'');
     $('intro').parentNode.insertBefore(d,$('intro'));
   }
   function load(manual){
@@ -500,8 +549,9 @@ footer code{font-family:var(--mono);font-size:12px}
           .sort(function(x,y){return x.start<y.start?-1:1});
         d.snapshotAt=snap.generated_at;return d;
       },function(){return d});
-    }).then(function(d){DATA=d;$('thr').textContent=d.move_threshold_pp;setStamp();render();
+    }).then(function(d){var prev=snapshotProbs();DATA=d;remember();markFlashes(prev);$('thr').textContent=d.move_threshold_pp;setStamp();render();FLASH={};
       if(!timer)timer=setInterval(function(){if(!document.hidden)load()},REFRESH_MS);
+      if(!priceTimer)priceTimer=setInterval(priceTick,PRICE_MS);
     }).catch(function(){
       if(DATA&&DATA.live){setStamp();return}
       return getJSON('data.json').then(function(d){DATA=d;$('thr').textContent=d.move_threshold_pp;setStamp();showSnapshotNotice();render()}).catch(function(err){
@@ -510,7 +560,7 @@ footer code{font-family:var(--mono);font-size:12px}
       });
     }).then(function(){busy=false},function(){busy=false});
   }
-  document.addEventListener('visibilitychange',function(){if(!document.hidden&&DATA&&DATA.live&&Date.now()-new Date(DATA.generated_at).getTime()>REFRESH_MS)load()});
+  document.addEventListener('visibilitychange',function(){if(document.hidden||!DATA||!DATA.live)return;if(Date.now()-new Date(DATA.generated_at).getTime()>REFRESH_MS)load();else priceTick()});
   load();
 })();
 </script>
