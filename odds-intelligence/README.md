@@ -31,6 +31,13 @@ python -m pytest -q
 
 Limits: probabilities are market estimates, not outcome guarantees. One bookmaker (DraftKings) plus one prediction market; the 3-bookmaker consensus rule of 0.1 still applies only to the API pipeline. Data refreshes only when the collector runs.
 
+## 0.3 — Live web app, all markets, match analysis
+
+- `web/index.html` fetches everything in the browser: full scan every 60 s (ESPN scoreboards + Polymarket events), Polymarket mid prices every 3 s (`clob.polymarket.com/midpoints`).
+- Markets per match: 1X2/winner, double chance, Asian handicap / spread / puck line, totals (DraftKings and Polymarket lines), tennis first set, set and game handicaps, game totals, number of sets; football Goal/No Goal, Over/Under 1.5/2.5/3.5 and exact scores from a Poisson model fitted to 1X2 + the bookmaker total (labelled "Modello").
+- Match analysis on demand: ESPN summary (form, standings, head-to-head, injuries, key players, goalies, ESPN predictor) and 24 h Polymarket price history; optional AI analysis and AI slips on claude.ai (`sample` capability).
+- The collector engine lives between `/*ENGINE-START*/` and `/*ENGINE-END*/` in `web/index.html`; `node scripts/snapshot.mjs` runs the same engine to write `web/data.json` (fallback/snapshot). `python scripts/build_site.py DIR` wraps the page for GitHub Pages (`gh-pages` branch).
+
 ## Requirements
 
 Python 3.11+; modern supported Linux distribution. CentOS 7 and legacy Plesk/PHP installations are not a safe target for an internet-exposed service. Prefer a supported VM/container on your existing hardware. Python dependencies are version-ranged for initial prototyping; pin a tested lockfile before production.
