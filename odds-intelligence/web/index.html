@@ -73,7 +73,7 @@ label.check input{accent-color:var(--accent)}
 .empty,.err{background:var(--surface);border:1px dashed var(--line);border-radius:6px;padding:20px;color:var(--muted)}
 footer{margin-top:36px;font-size:12.5px;color:var(--muted);max-width:75ch;display:flex;flex-direction:column;gap:6px}
 footer code{font-family:var(--mono);font-size:12px}
-@media (max-width:520px){.pick .pct{font-size:26px}.pick .who{max-width:110px}.match{padding:10px 12px}}
+@media (max-width:520px){.odds{grid-template-columns:1fr}.pick .pct{font-size:26px}.pick .who{max-width:110px}.match{padding:10px 12px}}
 @media (prefers-reduced-motion:no-preference){.bar div{transition:flex-basis .3s}}
 </style>
 
@@ -149,7 +149,7 @@ footer code{font-family:var(--mono);font-size:12px}
       tags.push('<span class="tag move">'+(up?'▲':'▼')+' '+esc(short(m.outcome))+' '+(up?'+':'')+m.pp.toFixed(1).replace('.',',')+' pp (quota '+n2(m.open_odds)+' → '+n2(m.close_odds)+')</span>');
     }
     var when=new Date(e.start);
-    var meta='<span class="lg">'+(opts.sport?SPORT_NAME[e.sport]+' · ':'')+esc(e.league)+'</span><span>'+(opts.day?fDay.format(when)+' ':'')+fTime.format(when)+'</span>';
+    var meta=(e.snapshot?'<span class="tag move">istantanea, non live</span>':'')+'<span class="lg">'+(opts.sport?SPORT_NAME[e.sport]+' · ':'')+esc(e.league)+'</span><span>'+(opts.day?fDay.format(when)+' ':'')+fTime.format(when)+'</span>';
     return '<article class="match"><div class="meta">'+meta+'</div>'+
       '<div class="names">'+esc(e.home)+'<span class="vs">–</span>'+esc(e.away)+'</div>'+
       '<div class="pick"><span class="pct band-'+e.pick.band+'">'+pct(e.pick.prob)+'</span><span class="who">'+esc(e.pick.name)+' · fiducia '+e.pick.band+'</span></div>'+
@@ -204,14 +204,141 @@ footer code{font-family:var(--mono);font-size:12px}
 
   window.addEventListener('hashchange',function(){state.league='all';render();window.scrollTo(0,0)});
   renderTabs(route());
-  fetch('data.json',{cache:'no-store'}).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}).then(function(d){
-    DATA=d;
-    $('thr').textContent=d.move_threshold_pp;
-    $('stamp').innerHTML='Quote aggiornate al <b>'+fStamp.format(new Date(d.generated_at))+'</b><br>'+upcoming().length+' partite · ora italiana';
-    render();
-  }).catch(function(err){
-    $('stamp').textContent='Quote non disponibili';
-    $('view').innerHTML='<div class="err">Non riesco a leggere il file delle quote ('+esc(err.message)+'). Ricarica la pagina; se il problema resta, il file data.json non è stato pubblicato.</div>';
-  });
+
+  /* ---------- Live collector (same rules as app/collector.py) ---------- */
+  var LIVE_URL='https://francescoregnani.github.io/FrancescoRegnani/';
+  var REFRESH_MS=120000, DAYS=4, MOVE_PP=4, MAX_SPREAD=0.10, MIN_LIQ=500;
+  var ESPN_LEAGUES=[['basket','NBA','basketball/nba'],['hockey','NHL','hockey/nhl'],['calcio','Serie A','soccer/ita.1'],['calcio','Premier League','soccer/eng.1'],['calcio','LaLiga','soccer/esp.1'],['calcio','Bundesliga','soccer/ger.1'],['calcio','Ligue 1','soccer/fra.1'],['calcio','Champions League','soccer/uefa.champions'],['calcio','Europa League','soccer/uefa.europa'],['calcio','Conference League','soccer/uefa.europa.conf']];
+  var POLY_SERIES={atp:'10365',wta:'10366',nba:'10345',nhl:'10346'};
+  function american(o){var v=parseFloat(String(o).replace('+',''));if(!isFinite(v)||Math.abs(v)<100)return null;return v>0?1+v/100:1+100/-v}
+  function norm(p){var t=0,k;for(k in p)t+=p[k];var o={};for(k in p)o[k]=p[k]/t;return o}
+  function fair(prices){var o={};for(var k in prices)o[k]=1/prices[k];return norm(o)}
+  function over(prices){var t=0;for(var k in prices)t+=1/prices[k];return (t-1)*100}
+  function key(s){return s.normalize('NFKD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'')}
+  function ptime(s){s=String(s).trim().replace(' ','T').replace(/\+00$/,'+00:00');if(!/[zZ]|[+-]\d\d:\d\d$/.test(s))s+='Z';return new Date(s)}
+  function ml(side,w){try{return american(side[w].odds)}catch(e){return null}}
+  function band(p,n){var e=p-1/n;return e>=.30?'alta':e>=.15?'media':'bassa'}
+  function ymd(d){return d.toISOString().slice(0,10).replace(/-/g,'')}
+  function getJSON(url){
+    // Simple GET with no custom headers: avoids a CORS preflight that ESPN rejects. The _ param busts caches.
+    return fetch(url+(url.indexOf('?')<0?'?':'&')+'_='+Math.floor(Date.now()/60000)).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()});
+  }
+  function parseEspn(e,sport,league){
+    var comp=(e.competitions||[{}])[0]||{};
+    var st=((comp.status||e.status||{}).type||{}).state;if(st!=='pre')return null;
+    var teams={};(comp.competitors||[]).forEach(function(c){teams[c.homeAway]=c.team||{}});
+    if(!teams.home||!teams.away)return null;
+    var odds=(comp.odds||[]).filter(function(o){return o&&o.moneyline&&typeof o.moneyline==='object'})[0];if(!odds)return null;
+    var m=odds.moneyline,home=teams.home.displayName,away=teams.away.displayName,sides={};
+    sides[home]=m.home;if(sport==='calcio')sides['Pareggio']=m.draw;sides[away]=m.away;
+    var close={},open={},okOpen=true,k;
+    for(k in sides){close[k]=ml(sides[k],'close');if(close[k]==null)return null;open[k]=ml(sides[k],'open');if(open[k]==null)okOpen=false}
+    var short={};short[home]=teams.home.name||home;short[away]=teams.away.name||away;
+    var rec={id:'espn:'+e.id,sport:sport,league:league,start:ptime(e.date).toISOString(),home:home,away:away,short:short,order:Object.keys(close),
+      book:close,margin_pct:over(close),sources:[{name:(odds.provider||{}).name||'Bookmaker',probs:fair(close)}],movement:null,totals:null};
+    if(okOpen){var b=fair(open),a=rec.sources[0].probs,best=null;for(k in a)if(best==null||Math.abs(a[k]-b[k])>Math.abs(a[best]-b[best]))best=k;
+      var pp=(a[best]-b[best])*100;rec.movement={outcome:best,pp:pp,open_odds:open[best],close_odds:close[best],flag:Math.abs(pp)>=MOVE_PP}}
+    try{var t=odds.total,o=american(t.over.close.odds),u=american(t.under.close.odds);
+      if(o&&u){var f=fair({o:o,u:u});rec.totals={line:odds.overUnder||parseFloat(String(t.over.close.line).replace(/[^0-9.]/g,'')),over:f.o,under:f.u}}}catch(err){}
+    return rec;
+  }
+  function parsePoly(e,sport,league,now){
+    var m=(e.markets||[]).filter(function(x){return x.sportsMarketType==='moneyline'})[0];
+    if(!m||m.closed||m.acceptingOrders===false)return null;
+    var names,prices,start;
+    try{names=JSON.parse(m.outcomes);prices=JSON.parse(m.outcomePrices).map(Number);start=ptime(m.gameStartTime||e.startTime)}catch(err){return null}
+    if(names.length!==2||!(start>now)||m.spread==null||+m.spread>MAX_SPREAD)return null;
+    if(prices.some(function(p){return p<=.01||p>=.99}))return null;
+    var liq=+(m.liquidityNum||0);if(liq<MIN_LIQ)return null;
+    var raw={};raw[names[0]]=prices[0];raw[names[1]]=prices[1];
+    var title=e.title||'',tour=title.indexOf(':')>0?title.split(':')[0].trim():league;
+    return {id:'poly:'+e.id,sport:sport,league:sport==='tennis'?league+' · '+tour:league,start:start.toISOString(),home:names[0],away:names[1],order:names,
+      book:null,margin_pct:null,sources:[{name:'Polymarket',probs:norm(raw),liquidity:Math.round(liq)}],movement:null,totals:null};
+  }
+  function attach(records,poly){
+    var idx={},used=new Set(),joined=0;
+    poly.forEach(function(p){idx[p.start.slice(0,10)+'|'+[key(p.home),key(p.away)].sort().join('|')]=p});
+    records.forEach(function(r){
+      if(r.sport!=='basket'&&r.sport!=='hockey')return;
+      var pair=[key(r.short[r.home]),key(r.short[r.away])].sort().join('|');
+      for(var d=0;d<3;d++){var delta=[0,-1,1][d],day=new Date(new Date(r.start).getTime()+delta*864e5).toISOString().slice(0,10),p=idx[day+'|'+pair];
+        if(p&&!used.has(p)){var bk={},pr={};for(var n in p.sources[0].probs)bk[key(n)]=p.sources[0].probs[n];
+          pr[r.home]=bk[key(r.short[r.home])];pr[r.away]=bk[key(r.short[r.away])];
+          r.sources.push({name:'Polymarket',probs:pr,liquidity:p.sources[0].liquidity});used.add(p);joined++;break}}
+    });
+    return {joined:joined,rest:poly.filter(function(p){return !used.has(p)})};
+  }
+  function finalize(r){
+    var probs={};r.order.forEach(function(n){probs[n]=r.sources.reduce(function(s,x){return s+x.probs[n]},0)/r.sources.length});probs=norm(probs);
+    r.outcomes=r.order.map(function(n){return {name:n,prob:probs[n],fair_odds:1/probs[n],book_odds:r.book?r.book[n]:null}});
+    var best=r.outcomes.reduce(function(a,b){return b.prob>a.prob?b:a}),gap=null;
+    if(r.sources.length>1)gap=Math.abs(r.sources[0].probs[best.name]-r.sources[1].probs[best.name])*100;
+    r.pick={name:best.name,prob:best.prob,band:band(best.prob,r.order.length),sources:r.sources.length,source_gap_pp:gap};
+    return r;
+  }
+  function settled(promises){return Promise.all(promises.map(function(p){return p.then(function(v){return {ok:true,v:v}},function(e){return {ok:false,e:e}})}))}
+  function collectLive(){
+    var now=new Date(),horizon=new Date(now.getTime()+DAYS*864e5),jobs=[],errors=0;
+    ESPN_LEAGUES.forEach(function(L){for(var i=0;i<=DAYS;i++){(function(L,day){
+      jobs.push(getJSON('https://site.api.espn.com/apis/site/v2/sports/'+L[2]+'/scoreboard?dates='+day).then(function(d){
+        return (d.events||[]).map(function(e){return parseEspn(e,L[0],L[1])}).filter(Boolean)}))})(L,ymd(new Date(now.getTime()+i*864e5)))}});
+    var polyJobs=Object.keys(POLY_SERIES).map(function(tag){
+      var sport=tag==='atp'||tag==='wta'?'tennis':tag==='nba'?'basket':'hockey',out=[];
+      function page(off){return getJSON('https://gamma-api.polymarket.com/events?series_id='+POLY_SERIES[tag]+'&closed=false&active=true&limit=200&offset='+off).then(function(p){
+        p.forEach(function(e){var r=parsePoly(e,sport,tag.toUpperCase(),now);if(r&&new Date(r.start)<=horizon)out.push(r)});
+        return p.length===200&&off<800?page(off+200):out})}
+      return page(0).then(function(v){return {tag:tag,v:v}});
+    });
+    return Promise.all([settled(jobs),settled(polyJobs)]).then(function(res){
+      var seen={},records=[],poly={atp:[],wta:[],nba:[],nhl:[]},okCount=0,espnOk=0;
+      res[0].forEach(function(x){if(!x.ok){errors++;return}okCount++;espnOk++;x.v.forEach(function(r){var t=new Date(r.start);if(!seen[r.id]&&t>now&&t<=horizon){seen[r.id]=1;records.push(r)}})});
+      res[1].forEach(function(x){if(!x.ok){errors++;return}okCount++;poly[x.v.tag]=x.v.v});
+      if(!okCount)throw new Error('nessuna fonte raggiungibile');
+      var a=attach(records,poly.nba.concat(poly.nhl));
+      records=records.concat(a.rest,poly.atp,poly.wta).map(finalize).sort(function(x,y){return x.start<y.start?-1:1});
+      return {generated_at:now.toISOString(),horizon_days:DAYS,move_threshold_pp:MOVE_PP,live:true,errors:errors,espnOk:espnOk,events:records};
+    });
+  }
+
+  var timer=null,busy=false;
+  function setStamp(){
+    if(!DATA)return;
+    var t=new Date(DATA.generated_at);
+    var fmt=DATA.live?new Intl.DateTimeFormat('it-IT',{timeZone:tz,hour:'2-digit',minute:'2-digit',second:'2-digit'}).format(t):fStamp.format(t);
+    $('stamp').innerHTML=(DATA.live?'<span style="color:var(--accent)">● Live</span> · aggiornate alle <b>'+fmt+'</b>':'Istantanea del <b>'+fmt+'</b>')+
+      '<br>'+upcoming().length+' partite · ora italiana'+(DATA.live?' · <button type="button" id="refresh" class="chip" style="padding:1px 8px;font-size:11px">Aggiorna</button>':'')+
+      (DATA.live&&DATA.espnOk===0?'<br>Quote DraftKings non raggiungibili: calcio da istantanea'+(DATA.snapshotAt?' del '+fStamp.format(new Date(DATA.snapshotAt)):''):'');
+    var b=$('refresh');if(b)b.addEventListener('click',function(){load(true)});
+  }
+  function showSnapshotNotice(){
+    if(document.getElementById('livebar'))return;
+    var d=document.createElement('div');d.id='livebar';d.className='empty';d.style.marginTop='14px';
+    d.innerHTML='Questa è un\'istantanea: qui le quote non possono essere scaricate in diretta. <a href="'+LIVE_URL+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Apri la versione live</a>, che si aggiorna da sola ogni 2 minuti.';
+    $('intro').parentNode.insertBefore(d,$('intro'));
+  }
+  function load(manual){
+    if(busy)return;busy=true;
+    if(manual&&$('refresh'))$('refresh').textContent='Aggiorno…';
+    collectLive().then(function(d){
+      if(d.espnOk>0)return d;
+      // DraftKings via ESPN unreachable from this browser: keep live Polymarket data, add football from the last snapshot.
+      return getJSON('data.json').then(function(snap){
+        var now=Date.now();
+        d.events=d.events.concat(snap.events.filter(function(e){return e.sport==='calcio'&&new Date(e.start).getTime()>now}).map(function(e){e.snapshot=true;return e}))
+          .sort(function(x,y){return x.start<y.start?-1:1});
+        d.snapshotAt=snap.generated_at;return d;
+      },function(){return d});
+    }).then(function(d){DATA=d;$('thr').textContent=d.move_threshold_pp;setStamp();render();
+      if(!timer)timer=setInterval(function(){if(!document.hidden)load()},REFRESH_MS);
+    }).catch(function(){
+      if(DATA&&DATA.live){setStamp();return}
+      return getJSON('data.json').then(function(d){DATA=d;$('thr').textContent=d.move_threshold_pp;setStamp();showSnapshotNotice();render()}).catch(function(err){
+        $('stamp').textContent='Quote non disponibili';
+        $('view').innerHTML='<div class="err">Non riesco a scaricare le quote ('+esc(err.message)+'). Controlla la connessione e ricarica la pagina.</div>';
+      });
+    }).then(function(){busy=false},function(){busy=false});
+  }
+  document.addEventListener('visibilitychange',function(){if(!document.hidden&&DATA&&DATA.live&&Date.now()-new Date(DATA.generated_at).getTime()>REFRESH_MS)load()});
+  load();
 })();
 </script>
