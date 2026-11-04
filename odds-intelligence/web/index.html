@@ -128,6 +128,25 @@ details.more[open]>summary::before{transform:rotate(90deg)}
 .spark .ar{fill:var(--accent-soft)}
 .spark text{font-family:var(--mono);font-size:9px;fill:var(--muted)}
 .aibox{border-left:3px solid var(--accent);padding:6px 10px;background:var(--bg);white-space:pre-wrap}
+.gwrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;margin-top:10px}
+@media (max-width:860px){.gwrap{grid-template-columns:minmax(0,1fr)}}
+.gpanel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px;min-width:0}
+.gpanel h3{margin:0 0 6px;font-family:var(--display);font-size:20px;letter-spacing:.03em;text-transform:uppercase}
+#chart{width:100%;height:360px}
+@media (max-width:520px){#chart{height:300px}}
+.gsel{width:100%;font:14px var(--body);padding:8px;border:1px solid var(--line);border-radius:4px;background:var(--surface);color:var(--ink)}
+.kv{display:grid;grid-template-columns:auto auto;gap:4px 12px;font-size:13px}
+.kv span:nth-child(odd){color:var(--muted)}
+.kv span:nth-child(even){font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+.verdict{border-radius:6px;padding:12px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.verdict .vh{font-family:var(--display);font-size:26px;font-weight:700;text-transform:uppercase;letter-spacing:.03em;line-height:1}
+.verdict.si{background:var(--accent-soft)}.verdict.si .vh{color:var(--accent)}
+.verdict.forse{background:var(--amber-soft)}.verdict.forse .vh{color:var(--amber)}
+.verdict.no{background:var(--bg);border:1px solid var(--line)}.verdict.no .vh{color:var(--muted)}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.flowbar{display:flex;height:10px;border-radius:3px;overflow:hidden;margin:4px 0}
+.flowbar div{height:100%}
 footer{margin-top:36px;font-size:12.5px;color:var(--muted);max-width:75ch;display:flex;flex-direction:column;gap:6px}
 footer code{font-family:var(--mono);font-size:12px}
 @media (max-width:520px){.odds{grid-template-columns:1fr}.pick .pct{font-size:26px}.pick .who{max-width:110px}.match{padding:10px 12px}}
@@ -150,6 +169,7 @@ footer code{font-family:var(--mono);font-size:12px}
   </footer>
 </div>
 
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <script>
 (function(){
   var SPORTS=[
@@ -159,10 +179,11 @@ footer code{font-family:var(--mono);font-size:12px}
     {id:'calcio',label:'Calcio'},
     {id:'hockey',label:'Hockey NHL'},
     {id:'movimenti',label:'Movimenti'},
+    {id:'grafici',label:'Grafici live'},
     {id:'schedina',label:'Schedina AI'}
   ];
   var SPORT_NAME={tennis:'Tennis',basket:'Basket',calcio:'Calcio',hockey:'Hockey'};
-  var DATA=null, state={sport:'all',two:false,league:'all',sort:'time',legs:'2',risk:'equilibrata',ssport:'all',win:'48',ask:'',slips:null,aiBusy:false,aiMsg:''};
+  var DATA=null, state={sport:'all',two:false,league:'all',sort:'time',legs:'2',risk:'equilibrata',ssport:'all',win:'48',ask:'',slips:null,aiBusy:false,aiMsg:'',gsport:'all',gsel:'',gtf:'24',gout:-1};
   var $=function(id){return document.getElementById(id)};
   var tz='Europe/Rome';
   var fTime=new Intl.DateTimeFormat('it-IT',{timeZone:tz,hour:'2-digit',minute:'2-digit'});
@@ -378,6 +399,202 @@ footer code{font-family:var(--mono);font-size:12px}
     SAMPLE(prompt,{modelTier:'default',onText:function(u){A.ai=u.text;refreshBody(id)}}).then(function(r){A.ai=r.text},function(err){A.ai=(err&&err.text)||('Analisi AI non disponibile ('+((err&&err.code)||'errore')+').')}).then(function(){A.aiBusy=false;refreshBody(id)});
   }
 
+  /* ---------- Grafici live: trades -> candles, volume, flow, short-term projection, verdict ---------- */
+  var CH={id:null,chart:null,trades:[],keys:new Set(),loading:false,err:null,timer:null,lastFetch:0,stats:null};
+  function chartEvents(){
+    return upcoming().filter(function(e){return e.sources.some(function(s){return s.cond})&&(state.gsport==='all'||e.sport===state.gsport)})
+      .sort(function(a,b){return vol24(b)-vol24(a)});
+  }
+  function pmSrc(e){return e.sources.filter(function(s){return s.cond})[0]}
+  function vol24(e){var s=pmSrc(e);return s?s.vol24||0:0}
+  function money(x){return '$'+Math.round(x).toLocaleString('it-IT')}
+  function tradeKey(t){return t.transaction_hash+'|'+t.token_id+'|'+t.size+'|'+t.timestamp+'|'+t.side}
+  function fetchTrades(cond,pages,cursor,acc){
+    acc=acc||[];
+    return fetch('https://data-api.polymarket.com/v2/trades?conditionId='+cond+'&limit=1000'+(cursor?'&cursor='+encodeURIComponent(cursor):''))
+      .then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json()})
+      .then(function(d){acc=acc.concat(d.data||[]);var pg=d.pagination||{};
+        return pages>1&&pg.has_more&&pg.next_cursor?fetchTrades(cond,pages-1,pg.next_cursor,acc):acc});
+  }
+  function addTrades(list){var n=0;list.forEach(function(t){var k=tradeKey(t);if(!CH.keys.has(k)){CH.keys.add(k);CH.trades.push(t);n++}});CH.trades.sort(function(a,b){return a.timestamp-b.timestamp});return n}
+  function tfCfg(){return {'6':{h:6,b:300},'24':{h:24,b:900},'72':{h:72,b:3600}}[state.gtf]}
+  function series(){
+    // Price of the chosen outcome (in %) and USD flow towards it, bucketed into candles.
+    var tf=tfCfg(),now=Date.now()/1000,from=now-tf.h*3600,out=state.gout,C={},order=[];
+    CH.trades.forEach(function(t){
+      if(t.timestamp<from)return;
+      var p=t.outcome_index===out?t.price:1-t.price,usd=t.size*t.price;
+      var toward=(t.outcome_index===out)===(t.side==='BUY');
+      var b=Math.floor(t.timestamp/tf.b)*tf.b,c=C[b];
+      if(!c){c=C[b]={time:b,open:p,high:p,low:p,close:p,vol:0,buy:0,sell:0,n:0};order.push(b)}
+      c.high=Math.max(c.high,p);c.low=Math.min(c.low,p);c.close=p;c.vol+=usd;c.n++;if(toward)c.buy+=usd;else c.sell+=usd;
+    });
+    order.sort(function(a,b){return a-b});
+    return order.map(function(b){return C[b]});
+  }
+  function ema(vals,n){var k=2/(n+1),e=null;return vals.map(function(v){e=e==null?v:v*k+e*(1-k);return e})}
+  function analyse(cs,e){
+    var src=pmSrc(e),outs=src.outs||[e.home,e.away],name=outs[state.gout]||'',tf=tfCfg();
+    var cur=null;if(src.tokens&&src.probs)cur=src.probs[name];
+    var last=cs.length?cs[cs.length-1].close:null;if(cur==null)cur=last;
+    var now=Date.now()/1000,inW=function(h){return cs.filter(function(c){return c.time>=now-h*3600})};
+    var c1=inW(1),c24=inW(Math.min(24,tf.h));
+    var sum=function(a,k){return a.reduce(function(t,c){return t+c[k]},0)};
+    var buy1=sum(c1,'buy'),sell1=sum(c1,'sell'),buyT=sum(cs,'buy'),sellT=sum(cs,'sell');
+    var first=cs.length?cs[0].open:cur,ch1=c1.length?cur-c1[0].open:0,chT=cur-first;
+    // Short-term projection: damped regression slope of the last 12 closes plus a capped order-flow term.
+    var tail=cs.slice(-12).map(function(c){return c.close}),slope=0;
+    if(tail.length>=4){var n=tail.length,mx=(n-1)/2,my=tail.reduce(function(a,b){return a+b},0)/n,num=0,den=0;
+      tail.forEach(function(y,i){num+=(i-mx)*(y-my);den+=(i-mx)*(i-mx)});slope=den?num/den:0}
+    var steps=3600/tf.b,rets=[];for(var i=1;i<cs.length;i++)rets.push(cs[i].close-cs[i-1].close);
+    var mean=rets.reduce(function(a,b){return a+b},0)/Math.max(1,rets.length);
+    var sd=Math.sqrt(rets.reduce(function(a,b){return a+(b-mean)*(b-mean)},0)/Math.max(1,rets.length-1))||0.005;
+    var flowRatio=(buy1+sell1)>0?(buy1-sell1)/(buy1+sell1):0;
+    var drift=Math.max(-0.04,Math.min(0.04,slope*steps*0.5+flowRatio*0.01));
+    var proj=Math.max(0.01,Math.min(0.99,cur+drift)),band=Math.min(0.15,1.28*sd*Math.sqrt(steps));
+    var closes=cs.map(function(c){return c.close}),ef=ema(closes,8),es=ema(closes,21);
+    var trend=closes.length>=5?(ef[ef.length-1]-es[es.length-1]):0;
+    var big=CH.trades.filter(function(t){return t.timestamp>=now-tf.h*3600}).reduce(function(m,t){var u=t.size*t.price;return u>m.u?{u:u,t:t}:m},{u:0,t:null});
+    return {name:name,other:outs[1-state.gout]||'',cur:cur,ch1:ch1,chT:chT,vol:sum(cs,'vol'),n:sum(cs,'n'),buyT:buyT,sellT:sellT,buy1:buy1,sell1:sell1,flowRatio:flowRatio,
+      proj:proj,band:band,drift:drift,trend:trend,sd:sd,big:big,ema:ef};
+  }
+  function verdict(e,A){
+    // Best offer we can see for each side: DraftKings odds when present, else the Polymarket price (1/p, before fees).
+    var src=pmSrc(e),outs=src.outs||[e.home,e.away],cands=[];
+    outs.forEach(function(nm,i){
+      var cons=(e.outcomes.filter(function(o){return o.name===nm})[0]||{}).prob;if(cons==null)return;
+      var adj=Math.max(-0.02,Math.min(0.02,(i===state.gout?1:-1)*A.drift*0.5)); // momentum nudges the estimate by at most 2 pp
+      var pEst=Math.max(0.01,Math.min(0.99,cons+adj));
+      var book=(e.outcomes.filter(function(o){return o.name===nm})[0]||{}).book_odds;
+      var pmP=src.probs[nm],offer=book||(pmP?1/pmP:null),where=book?'DraftKings':'Polymarket';
+      if(!offer)return;
+      var edge=pEst*offer-1,b=offer-1,kelly=b>0?(b*pEst-(1-pEst))/b:0;
+      cands.push({name:nm,pEst:pEst,cons:cons,offer:offer,where:where,edge:edge,kelly:kelly,minOdds:1/pEst,mom:(i===state.gout?1:-1)*A.drift});
+    });
+    if(!cands.length)return {cls:'no',head:'Dati insufficienti',lines:['Non ci sono abbastanza operazioni per giudicare questo mercato.']};
+    cands.sort(function(a,b){return b.edge-a.edge});
+    var c=cands[0],fav=cands.slice().sort(function(a,b){return b.pEst-a.pEst})[0],L=[];
+    var stake=Math.min(3,Math.max(0,c.kelly*25)); // quarter Kelly, capped at 3% of the budget
+    if(c.edge>0.01&&c.pEst>=0.5&&c.mom>-0.01){
+      L.push('<b>Come:</b> singola su <b>'+esc(c.name)+'</b> a quota '+n2(c.offer)+' ('+c.where+').');
+      L.push('Probabilità stimata '+pct(c.pEst,1)+': la quota offerta paga più del valore equo ('+n2(c.minOdds)+'), vantaggio stimato '+fl((c.edge*100).toFixed(1))+'%.');
+      L.push('<b>Puntata:</b> '+fl(stake.toFixed(1))+'% del budget (un quarto del criterio di Kelly). Non giocarla sotto quota '+n2(c.minOdds*1.01)+'.');
+      return {cls:'si',head:'Sì, la giocherei',lines:L};
+    }
+    if(fav.pEst>=0.6&&fav.mom>=-0.005){
+      L.push('<b>'+esc(fav.name)+'</b> è favorito al '+pct(fav.pEst,1)+', ma la quota vista ('+n2(fav.offer)+', '+fav.where+') '+(fav.offer>=fav.minOdds*0.995?'è solo in linea con':'è sotto')+' il valore equo ('+n2(fav.minOdds)+'): nessun vantaggio.');
+      L.push('<b>Come:</b> giocala solo se il tuo bookmaker offre almeno <b>'+n2(fav.minOdds*1.02)+'</b>. Puntata massima 1–2% del budget.');
+      if(A.flowRatio>0.2&&state.gout===cands.indexOf(fav))L.push('Nell\'ultima ora il denaro entra su questo esito: la quota potrebbe scendere ancora.');
+      return {cls:'forse',head:'Solo a quota migliore',lines:L};
+    }
+    if(Math.abs(A.drift)>=0.015){
+      L.push('Il prezzo si sta muovendo velocemente ('+(A.drift>0?'+':'')+fl((A.drift*100).toFixed(1))+' pp attesi nella prossima ora per '+esc(A.name)+').');
+      L.push('<b>Come:</b> aspetta che si stabilizzi prima di decidere; ricontrolla tra un\'ora.');
+      return {cls:'forse',head:'Aspetterei',lines:L};
+    }
+    L.push('Nessun esito offre una quota sopra il suo valore e il favorito non è abbastanza netto ('+esc(fav.name)+' '+pct(fav.pEst,1)+').');
+    L.push('Il margine del mercato rende la giocata svantaggiosa: meglio passare.');
+    return {cls:'no',head:'Non la giocherei',lines:L};
+  }
+  function themeColors(){var cs=getComputedStyle(document.documentElement),g=function(n){return cs.getPropertyValue(n).trim()};
+    return {bg:g('--surface'),fg:g('--muted'),line:g('--line'),up:g('--accent'),down:g('--amber'),ink:g('--ink'),soft:g('--bar-2')}}
+  var fChart=new Intl.DateTimeFormat('it-IT',{timeZone:tz,day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+  var fTick=new Intl.DateTimeFormat('it-IT',{timeZone:tz,hour:'2-digit',minute:'2-digit'});
+  function mountChart(){
+    var el=$('chart');if(!el||!window.LightweightCharts)return;
+    if(CH.chart){try{CH.chart.remove()}catch(err){}CH.chart=null}
+    var c=themeColors();
+    CH.chart=LightweightCharts.createChart(el,{autoSize:true,layout:{background:{type:'solid',color:c.bg},textColor:c.fg,fontFamily:'IBM Plex Mono, monospace'},
+      grid:{vertLines:{color:c.line},horzLines:{color:c.line}},rightPriceScale:{borderColor:c.line},
+      timeScale:{borderColor:c.line,timeVisible:true,secondsVisible:false,tickMarkFormatter:function(t){return fTick.format(new Date(t*1000))}},
+      localization:{timeFormatter:function(t){return fChart.format(new Date(t*1000))},priceFormatter:function(p){return p.toFixed(1)+'%'}},crosshair:{mode:0}});
+    CH.candles=CH.chart.addCandlestickSeries({upColor:c.up,downColor:c.down,borderUpColor:c.up,borderDownColor:c.down,wickUpColor:c.up,wickDownColor:c.down});
+    CH.vol=CH.chart.addHistogramSeries({priceScaleId:'vol',priceFormat:{type:'custom',formatter:function(v){return money(v)}},lastValueVisible:false,priceLineVisible:false});
+    CH.chart.priceScale('vol').applyOptions({scaleMargins:{top:0.78,bottom:0}});
+    CH.ema=CH.chart.addLineSeries({color:c.ink,lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    CH.proj=CH.chart.addLineSeries({color:c.up,lineWidth:2,lineStyle:2,priceLineVisible:false,lastValueVisible:true,crosshairMarkerVisible:false});
+    CH.projHi=CH.chart.addLineSeries({color:c.soft,lineWidth:1,lineStyle:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    CH.projLo=CH.chart.addLineSeries({color:c.soft,lineWidth:1,lineStyle:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
+    CH.fitted=false;
+  }
+  function paintChart(e){
+    if(!CH.chart)return;
+    var cs=series(),A=analyse(cs,e),c=themeColors();
+    var P=function(x){return x*100};
+    CH.candles.setData(cs.map(function(k){return {time:k.time,open:P(k.open),high:P(k.high),low:P(k.low),close:P(k.close)}}));
+    CH.vol.setData(cs.map(function(k){return {time:k.time,value:k.vol,color:k.buy>=k.sell?c.up+'99':c.down+'99'}}));
+    CH.ema.setData(cs.map(function(k,i){return {time:k.time,value:P(A.ema[i])}}));
+    if(cs.length){var lt=cs[cs.length-1].time,tf=tfCfg(),t1=lt+3600;
+      CH.proj.setData([{time:lt,value:P(A.cur)},{time:t1,value:P(A.proj)}]);
+      CH.projHi.setData([{time:lt,value:P(A.cur)},{time:t1,value:P(Math.min(.99,A.proj+A.band))}]);
+      CH.projLo.setData([{time:lt,value:P(A.cur)},{time:t1,value:P(Math.max(.01,A.proj-A.band))}]);}
+    else{CH.proj.setData([]);CH.projHi.setData([]);CH.projLo.setData([])}
+    if(!CH.fitted&&cs.length){CH.chart.timeScale().fitContent();CH.fitted=true}
+    paintSide(e,A);
+  }
+  function paintSide(e,A){
+    var el=$('gside');if(!el)return;
+    var V=verdict(e,A),tot=A.buyT+A.sellT,bp=tot?A.buyT/tot:0.5;
+    var sgn=function(x){return (x>=0?'+':'')+fl((x*100).toFixed(1))+' pp'};
+    el.innerHTML='<div class="gpanel"><h3>'+esc(A.name)+'</h3><div class="kv">'+
+      '<span>Probabilità ora</span><span>'+pct(A.cur,1)+'</span>'+
+      '<span>Ultima ora</span><span>'+sgn(A.ch1)+'</span>'+
+      '<span>Nel periodo</span><span>'+sgn(A.chT)+'</span>'+
+      '<span>Volume nel periodo</span><span>'+money(A.vol)+'</span>'+
+      '<span>Operazioni</span><span>'+A.n.toLocaleString('it-IT')+'</span>'+
+      '<span>Volume 24 ore (mercato)</span><span>'+money(vol24(e))+'</span>'+
+      (A.big.t?'<span>Operazione più grande</span><span>'+money(A.big.u)+' '+(A.big.t.side==='BUY'?'su':'contro')+' '+esc(short(A.big.t.outcome||''))+'</span>':'')+
+      '</div><div class="ctl-label" style="margin-top:10px">Denaro su '+esc(short(A.name))+' / contro</div>'+
+      '<div class="flowbar"><div style="width:'+(bp*100).toFixed(1)+'%;background:var(--accent)"></div><div style="flex:1;background:var(--amber)"></div></div>'+
+      '<div class="kv"><span>A favore</span><span>'+money(A.buyT)+'</span><span>Contro</span><span>'+money(A.sellT)+'</span><span>Flusso ultima ora</span><span>'+(A.flowRatio>=0?'+':'')+Math.round(A.flowRatio*100)+'%</span></div></div>'+
+      '<div class="gpanel"><h3>Previsione prossima ora</h3><p style="margin:0 0 6px;font-size:13.5px">Probabilità di <b>'+esc(A.name)+'</b> attesa a <b>'+pct(A.proj,1)+'</b> (intervallo '+pct(Math.max(.01,A.proj-A.band))+'–'+pct(Math.min(.99,A.proj+A.band))+'). '+
+      (Math.abs(A.drift)<0.005?'Mercato stabile.':A.drift>0?'Tendenza al rialzo.':'Tendenza al ribasso.')+' Media mobile '+(A.trend>=0?'sopra':'sotto')+' quella lenta.</p>'+
+      '<p style="margin:0;font-size:11.5px;color:var(--muted)">Stima di tendenza su candele e flusso di denaro: dice dove potrebbe andare il prezzo, non chi vincerà.</p></div>'+
+      '<div class="verdict '+V.cls+'"><span class="ctl-label">La giocherei?</span><span class="vh">'+V.head+'</span>'+V.lines.map(function(l){return '<span>'+l+'</span>'}).join('')+'</div>';
+  }
+  function loadChartData(e,initial){
+    var src=pmSrc(e);if(!src)return;var id=e.id;
+    if(initial){CH.trades=[];CH.keys=new Set();CH.err=null;CH.loading=true}
+    var pages=initial?(state.gtf==='72'?5:3):1;
+    fetchTrades(src.cond,pages).then(function(list){if(CH.id!==id)return;addTrades(list);CH.loading=false;CH.err=null;CH.lastFetch=Date.now();
+      var m=$('gmsg');if(m)m.textContent=CH.trades.length?'':'Nessuna operazione nel periodo scelto.';paintChart(e)})
+    .catch(function(err){if(CH.id!==id)return;CH.loading=false;CH.err=err.message;var m=$('gmsg');if(m)m.textContent='Operazioni Polymarket non raggiungibili ('+err.message+').'});
+  }
+  function renderCharts(){
+    var list=chartEvents();
+    if(!list.length){$('controls').innerHTML='';$('view').innerHTML='<div class="empty">Nessun mercato Polymarket attivo per questo filtro. Il calcio non ha dati di volume pubblici.</div>';return}
+    if(!list.some(function(e){return e.id===state.gsel})){state.gsel=list[0].id;state.gout=-1}
+    var e=findEvent(state.gsel);
+    if(state.gout<0){var so=pmSrc(e).outs||[e.home,e.away];state.gout=so.indexOf(e.pick.name)>=0?so.indexOf(e.pick.name):0}
+    if(CH.id===state.gsel&&$('chart')&&CH.chart){ // already mounted: only refresh numbers
+      var o=$('gpick');if(o&&document.activeElement!==o)o.innerHTML=pickOptions(list);
+      paintChart(e);return;
+    }
+    $('controls').innerHTML='';
+    if(DATA&&!DATA.live){
+      $('view').innerHTML='<div class="empty">I grafici si aggiornano in tempo reale solo nella versione live.'+(LIVE_URL?' <a href="'+LIVE_URL+'#grafici" target="_blank" rel="noopener" style="color:var(--accent);font-weight:600">Apri i grafici live</a>.':'')+'</div>';return}
+    var src=pmSrc(e),outs=src.outs||[e.home,e.away];
+    $('view').innerHTML='<div class="builder" style="margin-top:0">'+
+      '<div class="row"><span class="ctl-label">Sport</span>'+seg('gsport',[['all','Tutti'],['tennis','Tennis'],['basket','Basket'],['hockey','Hockey']],state.gsport)+
+      '<span class="ctl-label">Periodo</span>'+seg('gtf',[['6','6 ore'],['24','24 ore'],['72','3 giorni']],state.gtf)+'</div>'+
+      '<label for="gpick" class="ctl-label">Partita (ordinate per volume 24 ore)</label><select id="gpick" class="gsel">'+pickOptions(list)+'</select>'+
+      '<div class="row"><span class="ctl-label">Grafico di</span>'+seg('gout',[[0,esc(outs[0])],[1,esc(outs[1])]].map(function(x){return [String(x[0]),x[1]]}),String(state.gout))+'</div></div>'+
+      '<div class="gwrap"><div class="gpanel"><div id="chart"></div><div class="legend"><span><i style="background:var(--accent)"></i>candela in salita / volume a favore</span><span><i style="background:var(--amber)"></i>in discesa / volume contro</span><span><i style="background:var(--ink)"></i>media mobile veloce</span><span>- - previsione prossima ora con intervallo</span></div><div id="gmsg" class="ai-status" style="margin-top:6px">Carico le operazioni…</div></div>'+
+      '<div id="gside" style="display:flex;flex-direction:column;gap:12px;min-width:0"></div></div>';
+    $('view').querySelectorAll('.seg button').forEach(function(b){b.addEventListener('click',function(){
+      var g=b.dataset.g,v=b.dataset.v;if(g==='gout')v=+v;if(state[g]===v)return;state[g]=v;
+      if(g==='gout'){CH.fitted=false;paintChart(findEvent(state.gsel));$('view').querySelectorAll('.seg button[data-g="gout"]').forEach(function(x){x.setAttribute('aria-pressed',String(+x.dataset.v===state.gout))});return}
+      CH.id=null;render()})});
+    $('gpick').addEventListener('change',function(ev){state.gsel=ev.target.value;state.gout=-1;CH.id=null;render()});
+    CH.id=state.gsel;mountChart();paintChart(e);loadChartData(e,true);
+    if(!CH.timer)CH.timer=setInterval(function(){ // new trades every 10 s while the chart is visible
+      if(document.hidden||route()!=='grafici'||!CH.id||CH.loading)return;var ev=findEvent(CH.id);if(ev)loadChartData(ev,false)},10000);
+  }
+  function pickOptions(list){
+    return list.map(function(e){return '<option value="'+esc(e.id)+'"'+(e.id===state.gsel?' selected':'')+'>'+esc(SPORT_NAME[e.sport]+' · '+e.home+' – '+e.away+' · '+fmtWhen(e.start)+' · '+money(vol24(e)))+'</option>'}).join('');
+  }
+  window.addEventListener('hashchange',function(){if(route()!=='grafici'&&CH.chart){try{CH.chart.remove()}catch(err){}CH.chart=null;CH.id=null}});
+
   function chip(group,val,label,cur){return '<button type="button" class="chip" data-g="'+group+'" data-v="'+esc(val)+'" aria-pressed="'+(cur===val)+'">'+esc(label)+'</button>'}
   function seg(group,opts,cur){return '<div class="seg" role="group">'+opts.map(function(o){return '<button type="button" data-g="'+group+'" data-v="'+o[0]+'" aria-pressed="'+(cur===o[0])+'">'+o[1]+'</button>'}).join('')+'</div>'}
   function sortCtl(withTime){
@@ -413,6 +630,9 @@ footer code{font-family:var(--mono);font-size:12px}
       sortList(list);
       list=list.slice(0,40);
       html=list.length?'<div class="list">'+list.map(function(e,i){return '<div class="rank"><div class="n">'+(i+1)+'</div>'+card(e,{sport:true,day:true})+'</div>'}).join('')+'</div>':'<div class="empty">Nessuna partita con questi filtri.</div>';
+    } else if(cur==='grafici'){
+      $('intro').textContent='Andamento del prezzo e dei volumi su Polymarket, costruito dalle singole operazioni. Candele, volumi comprati e venduti, media mobile, previsione per la prossima ora e un giudizio su come giocarla.';
+      renderCharts();return;
     } else if(cur==='schedina'){
       $('intro').textContent='Componi una schedina da 2 o 3 eventi partendo dalle probabilità reali. La probabilità combinata è il prodotto delle singole: con 3 eventi al 70% ciascuno è circa 34%.';
       $('controls').innerHTML='';
@@ -628,11 +848,14 @@ footer code{font-family:var(--mono);font-size:12px}
     var tok=null;try{var ids=JSON.parse(m.clobTokenIds);if(ids.length===2){tok={};tok[names[0]]=ids[0];tok[names[1]]=ids[1]}}catch(err){}
     var title=e.title||'',tour=title.indexOf(':')>0?title.split(':')[0].trim():league;
     return {id:'poly:'+e.id,sport:sport,league:sport==='tennis'?league+' · '+tour:league,start:start.toISOString(),home:names[0],away:names[1],order:names,
-      book:null,margin_pct:null,sources:[{name:'Polymarket',probs:norm(raw),liquidity:Math.round(liq),tokens:tok}],movement:null,totals:null,mk:polyMarkets(e,sport)};
+      book:null,margin_pct:null,sources:[{name:'Polymarket',probs:norm(raw),liquidity:Math.round(liq),tokens:tok,cond:m.conditionId||null,outs:names,vol24:Math.round(+(m.volume24hr||e.volume24hr||0))}],movement:null,totals:null,mk:polyMarkets(e,sport)};
   }
   function attach(records,poly){
     var idx={},used=new Set(),joined=0;
-    poly.forEach(function(p){idx[p.start.slice(0,10)+'|'+[key(p.home),key(p.away)].sort().join('|')]=p});
+    // Polymarket can list the same game twice: keep the market with more 24 h volume.
+    var pv=function(p){return (p.sources[0]&&p.sources[0].vol24)||0};
+    poly.forEach(function(p){var k=p.start.slice(0,10)+'|'+[key(p.home),key(p.away)].sort().join('|');if(!idx[k]||pv(p)>pv(idx[k]))idx[k]=p});
+    var pairOf=function(p){return [key(p.home),key(p.away)].sort().join('|')},matchedPairs={};
     records.forEach(function(r){
       if(r.sport!=='basket'&&r.sport!=='hockey')return;
       var pair=[key(r.short[r.home]),key(r.short[r.away])].sort().join('|');
@@ -640,9 +863,11 @@ footer code{font-family:var(--mono);font-size:12px}
         if(p&&!used.has(p)){var bk={},bt={},pr={},tk=null,ps=p.sources[0];for(var n in ps.probs){bk[key(n)]=ps.probs[n];if(ps.tokens)bt[key(n)]=ps.tokens[n]}
           pr[r.home]=bk[key(r.short[r.home])];pr[r.away]=bk[key(r.short[r.away])];
           if(ps.tokens){tk={};tk[r.home]=bt[key(r.short[r.home])];tk[r.away]=bt[key(r.short[r.away])]}
-          r.sources.push({name:'Polymarket',probs:pr,liquidity:ps.liquidity,tokens:tk});r.mk=r.mk.concat(p.mk||[]);used.add(p);joined++;break}}
+          var om={};om[key(r.short[r.home])]=r.home;om[key(r.short[r.away])]=r.away;
+          r.sources.push({name:'Polymarket',probs:pr,liquidity:ps.liquidity,tokens:tk,cond:ps.cond,outs:(ps.outs||[]).map(function(n){return om[key(n)]||n}),vol24:ps.vol24});matchedPairs[pair]=1;r.mk=r.mk.concat(p.mk||[]);used.add(p);joined++;break}}
     });
-    return {joined:joined,rest:poly.filter(function(p){return !used.has(p)})};
+    return {joined:joined,rest:poly.filter(function(p){return !used.has(p)&&!(r0(p)&&matchedPairs[pairOf(p)])})};
+    function r0(p){return p.sport==='basket'||p.sport==='hockey'}
   }
   function finalize(r){
     var probs={};r.order.forEach(function(n){probs[n]=r.sources.reduce(function(s,x){return s+x.probs[n]},0)/r.sources.length});probs=norm(probs);

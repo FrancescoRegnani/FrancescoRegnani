@@ -38,6 +38,10 @@ Limits: probabilities are market estimates, not outcome guarantees. One bookmake
 - Match analysis on demand: ESPN summary (form, standings, head-to-head, injuries, key players, goalies, ESPN predictor) and 24 h Polymarket price history; optional AI analysis and AI slips on claude.ai (`sample` capability).
 - The collector engine lives between `/*ENGINE-START*/` and `/*ENGINE-END*/` in `web/index.html`; `node scripts/snapshot.mjs` runs the same engine to write `web/data.json` (fallback/snapshot). `python scripts/build_site.py DIR` wraps the page for GitHub Pages (`gh-pages` branch).
 
+## 0.4 — Live charts
+
+- Tab "Grafici live": candles and buy/sell volume built from Polymarket trades (`data-api.polymarket.com/v2/trades?conditionId=…`, new trades every 10 s), fast moving average, a one-hour projection (damped regression slope plus a capped order-flow term, with an 80% band), money flow for/against, largest trade, and a verdict ("Sì / Solo a quota migliore / Aspetterei / No") with minimum odds and a quarter-Kelly stake capped at 3%. Chart library: lightweight-charts 4.1.3 (unpkg). Football has no public volume data, so it is not charted.
+
 ## Requirements
 
 Python 3.11+; modern supported Linux distribution. CentOS 7 and legacy Plesk/PHP installations are not a safe target for an internet-exposed service. Prefer a supported VM/container on your existing hardware. Python dependencies are version-ranged for initial prototyping; pin a tested lockfile before production.
