@@ -34,6 +34,7 @@ input double Trail_ATR_Mult     = 1.5;
 
 //--- Risk management
 input double RiskPercent        = 1.0;    // % of equity risked per trade
+input double MaxRiskCapPct      = 5.0;    // Small accounts: allow min lot if its risk <= this %
 input double MaxDailyLossPct    = 3.0;    // Stop trading for the day after this loss %
 input int    MaxSpreadPoints    = 30;     // Skip entries when spread is wider (points)
 input int    StartHour          = 8;      // Trading window start (server time)
@@ -142,7 +143,18 @@ double CalcLots(double slDist)
    double maxLot  = MarketInfo(Symbol(), MODE_MAXLOT);
 
    lots = MathFloor(lots / step) * step;
-   if(lots < minLot) return 0;          // never round UP past the risk budget
+   if(lots < minLot)
+   {
+      // Small account: the minimum lot exceeds RiskPercent. Accept it only
+      // if its real risk stays within MaxRiskCapPct, otherwise skip the trade.
+      double minLotRiskPct = minLot * lossPerLot / AccountEquity() * 100.0;
+      if(minLotRiskPct > MaxRiskCapPct)
+      {
+         PrintFormat("Skip: min lot would risk %.1f%% of equity (cap %.1f%%)", minLotRiskPct, MaxRiskCapPct);
+         return 0;
+      }
+      lots = minLot;
+   }
    if(lots > maxLot) lots = maxLot;
    return NormalizeDouble(lots, 2);
 }
