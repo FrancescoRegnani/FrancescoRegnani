@@ -2,22 +2,64 @@
 // Riceve una domanda (dal Comando Rapido di Siri), interroga Claude
 // e restituisce una risposta breve in testo semplice, pronta da leggere a voce.
 //
+// Due modalità:
+//   - normale: modello veloce ed economico (Haiku) per le domande di tutti i giorni;
+//   - approfondita: se la domanda contiene "pensaci bene" o "sei sicuro",
+//     risponde il modello più capace (Opus), ragionando di più.
+// Un contatore di spesa blocca Jarvis quando si raggiunge il budget mensile.
+//
 // Segreti richiesti (Supabase > Edge Functions > Secrets):
-//   ANTHROPIC_API_KEY  chiave API di Claude
-//   JARVIS_TOKEN       password lunga e casuale che solo il tuo Comando Rapido conosce
+//   ANTHROPIC_API_KEY   chiave API di Claude
+//   JARVIS_TOKEN        password lunga e casuale che solo il tuo Comando Rapido conosce
 // Opzionali:
-//   JARVIS_MODEL       modello Claude (predefinito: claude-haiku-5-5, veloce ed economico;
-//                      claude-opus-5-5 per risposte più ragionate)
-//   JARVIS_EFFORT      low | medium | high (predefinito: low, per risposte veloci)
+//   JARVIS_MODEL        modello normale       (predefinito: claude-haiku-5-5)
+//   JARVIS_DEEP_MODEL   modello approfondito  (predefinito: claude-opus-5-5)
+//   JARVIS_EFFORT       ragionamento normale      (predefinito: low)
+//   JARVIS_DEEP_EFFORT  ragionamento approfondito (predefinito: medium)
+//   JARVIS_BUDGET_EUR   budget mensile in euro (predefinito: 15)
+//   JARVIS_USD_TO_EUR   cambio dollaro -> euro usato per il budget (predefinito: 0.95, prudente)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY sono forniti automaticamente da Supabase.
 
 import Anthropic from "npm:@anthropic-ai/sdk@1.8.0";
 import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 
-const MODEL = Deno.env.get("JARVIS_MODEL") ?? "claude-haiku-5-5";
-// Haiku usa la ricerca web di base e non ha il "paracadute" lato server per i rifiuti.
-const IS_HAIKU = MODEL.startsWith("claude-haiku");
-const EFFORT = (Deno.env.get("JARVIS_EFFORT") ?? "low") as "low" | "medium" | "high";
+type Effort = "low" | "medium" | "high";
+
+interface Mode {
+  model: string;
+  effort: Effort;
+  deep: boolean;
+}
+
+const NORMAL_MODE: Mode = {
+  model: Deno.env.get("JARVIS_MODEL") ?? "claude-haiku-5-5",
+  effort: (Deno.env.get("JARVIS_EFFORT") ?? "low") as Effort,
+  deep: false,
+};
+const DEEP_MODE: Mode = {
+  model: Deno.env.get("JARVIS_DEEP_MODEL") ?? "claude-opus-5-5",
+  effort: (Deno.env.get("JARVIS_DEEP_EFFORT") ?? "medium") as Effort,
+  deep: true,
+};
+
+// Frasi che attivano la modalità approfondita (confrontate senza accenti e maiuscole).
+const DEEP_TRIGGERS = ["pensaci bene", "sei sicuro", "sei sicura", "ragionaci bene", "pensa bene"];
+
+const BUDGET_EUR = Number(Deno.env.get("JARVIS_BUDGET_EUR") ?? "15");
+const USD_TO_EUR = Number(Deno.env.get("JARVIS_USD_TO_EUR") ?? "0.95");
+// Oltre questa quota del budget, la modalità approfondita passa al modello economico.
+const DEEP_MODE_BUDGET_SHARE = 0.8;
+
+// Prezzi in dollari per milione di token (prompt fino a 100K token) e per ricerca web.
+// Servono solo a stimare la spesa: il conto ufficiale è nella console di Anthropic.
+const PRICES_USD: Record<string, { input: number; output: number }> = {
+  "claude-haiku-5-5": { input: 0.10, output: 0.50 },
+  "claude-sonnet-5-5": { input: 2.00, output: 10.00 },
+  "claude-opus-5-5": { input: 4.00, output: 20.00 },
+};
+const FALLBACK_PRICE_USD = { input: 4.00, output: 20.00 }; // modelli non in tabella: stima prudente
+const WEB_SEARCH_USD = 0.01;
+
 const JARVIS_TOKEN = Deno.env.get("JARVIS_TOKEN") ?? "";
 const TIME_ZONE = "Europe/Rome";
 
@@ -38,7 +80,7 @@ const db = createClient(
 
 const SYSTEM_PROMPT = `Sei Jarvis, l'assistente personale del tuo utente. Parli in italiano.
 
-Il tuo utente ti usa soprattutto a voce, tramite Siri su Apple Watch, iPhone o AirPods: la tua risposta verrà letta ad alta voce.
+Il tuo utente ti usa soprattutto a voce, tramite Siri su Apple Watch, iPhone, AirPods o Mac: la tua risposta verrà letta ad alta voce.
 Quindi:
 - Rispondi in modo breve e diretto: di norma una-tre frasi. Vai più a fondo solo se te lo chiede.
 - Scrivi testo semplice, pronto da pronunciare: niente markdown, elenchi puntati, emoji, tabelle o link.
@@ -56,7 +98,9 @@ Informazioni aggiornate:
 
 Su questioni fiscali, legali o di lavoro sii prudente: dai l'indicazione essenziale e, se la risposta richiede verifica su fonti ufficiali, dillo chiaramente.`;
 
-const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
+const DEEP_MODE_NOTE = `L'utente ti ha chiesto di pensarci bene o di verificare. Ragiona con cura, ricontrolla la risposta precedente se si riferisce a quella, e correggila apertamente se era sbagliata. Puoi rispondere un po' più a lungo, fino a cinque-sei frasi, sempre in testo semplice da leggere a voce.`;
+
+const MEMORY_TOOLS: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "salva_ricordo",
     description:
@@ -84,13 +128,22 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     },
     strict: true,
   },
-  {
-    type: IS_HAIKU ? "web_search_20250305" : "web_search_20260209",
-    name: "web_search",
-    max_uses: 3,
-    user_location: { type: "approximate", country: "IT", timezone: TIME_ZONE },
-  },
 ];
+
+const isHaiku = (model: string) => model.startsWith("claude-haiku");
+
+function toolsFor(model: string): Anthropic.Beta.BetaToolUnion[] {
+  return [
+    ...MEMORY_TOOLS,
+    {
+      // Haiku usa la versione di base della ricerca web.
+      type: isHaiku(model) ? "web_search_20250305" : "web_search_20260209",
+      name: "web_search",
+      max_uses: 3,
+      user_location: { type: "approximate", country: "IT", timezone: TIME_ZONE },
+    },
+  ];
+}
 
 function textResponse(body: string, status = 200): Response {
   return new Response(body, {
@@ -111,6 +164,20 @@ function safeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+function normalize(text: string): string {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function wantsDeepMode(question: string): boolean {
+  const q = normalize(question);
+  return DEEP_TRIGGERS.some((t) => q.includes(t));
+}
+
 async function readQuestion(req: Request): Promise<string> {
   const raw = await req.text();
   const contentType = req.headers.get("content-type") ?? "";
@@ -124,6 +191,50 @@ async function readQuestion(req: Request): Promise<string> {
   }
   return raw.trim();
 }
+
+// ---------------------------------------------------------------------------
+// Budget
+// ---------------------------------------------------------------------------
+
+function costUsd(model: string, usage: Anthropic.Beta.BetaUsage): number {
+  const p = PRICES_USD[model] ?? FALLBACK_PRICE_USD;
+  const input = usage.input_tokens ?? 0;
+  const cacheWrite = usage.cache_creation_input_tokens ?? 0;
+  const cacheRead = usage.cache_read_input_tokens ?? 0;
+  const output = usage.output_tokens ?? 0;
+  const searches = usage.server_tool_use?.web_search_requests ?? 0;
+  return (
+    (input * p.input + cacheWrite * p.input * 1.25 + cacheRead * p.input * 0.1 + output * p.output) / 1_000_000 +
+    searches * WEB_SEARCH_USD
+  );
+}
+
+async function recordUsage(model: string, usage: Anthropic.Beta.BetaUsage): Promise<void> {
+  const { error } = await db.from("jarvis_usage").insert({
+    model,
+    input_tokens: usage.input_tokens ?? 0,
+    output_tokens: usage.output_tokens ?? 0,
+    cache_read_tokens: usage.cache_read_input_tokens ?? 0,
+    cache_write_tokens: usage.cache_creation_input_tokens ?? 0,
+    web_searches: usage.server_tool_use?.web_search_requests ?? 0,
+    cost_usd: costUsd(model, usage),
+  });
+  if (error) console.error("Registro consumi:", error.message);
+}
+
+// Spesa stimata del mese in corso (mese di calendario UTC), in euro.
+async function monthSpendEur(): Promise<number> {
+  const now = new Date();
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+  const { data, error } = await db.from("jarvis_usage").select("cost_usd").gte("created_at", monthStart);
+  if (error) throw new Error(`Lettura consumi: ${error.message}`);
+  const usd = (data ?? []).reduce((sum, row) => sum + Number(row.cost_usd), 0);
+  return usd * USD_TO_EUR;
+}
+
+// ---------------------------------------------------------------------------
+// Memoria e cronologia
+// ---------------------------------------------------------------------------
 
 async function loadMemories(): Promise<string> {
   const { data, error } = await db
@@ -185,6 +296,10 @@ async function runTool(name: string, input: unknown): Promise<{ content: string;
   return { content: `Strumento sconosciuto: ${name}`, isError: true };
 }
 
+// ---------------------------------------------------------------------------
+// Conversazione con Claude
+// ---------------------------------------------------------------------------
+
 function extractText(message: Anthropic.Beta.BetaMessage): string {
   return message.content
     .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
@@ -193,7 +308,7 @@ function extractText(message: Anthropic.Beta.BetaMessage): string {
     .trim();
 }
 
-async function askJarvis(question: string): Promise<string> {
+async function askJarvis(question: string, mode: Mode): Promise<string> {
   const [memories, history] = await Promise.all([loadMemories(), loadRecentHistory()]);
 
   const now = new Intl.DateTimeFormat("it-IT", {
@@ -202,6 +317,9 @@ async function askJarvis(question: string): Promise<string> {
     timeStyle: "short",
   }).format(new Date());
 
+  let context = `Cose che sai sull'utente:\n${memories}\n\nData e ora attuali (${TIME_ZONE}): ${now}.`;
+  if (mode.deep) context += `\n\n${DEEP_MODE_NOTE}`;
+
   const messages: Anthropic.Beta.BetaMessageParam[] = [
     ...history,
     { role: "user", content: question },
@@ -209,20 +327,22 @@ async function askJarvis(question: string): Promise<string> {
 
   for (let i = 0; i < MAX_LOOP_ITERATIONS; i++) {
     const response = await claude().beta.messages.create({
-      model: MODEL,
-      max_tokens: 4000,
-      // Se il modello principale rifiuta, Anthropic riprova con un modello alternativo.
-      ...(IS_HAIKU ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
-      output_config: { effort: EFFORT },
+      model: mode.model,
+      max_tokens: mode.deep ? 8000 : 4000,
+      // Se il modello rifiuta, Anthropic riprova con un modello alternativo (non disponibile su Haiku).
+      ...(isHaiku(mode.model) ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
+      output_config: { effort: mode.effort },
       system: [
         // Parte fissa: messa in cache per risparmiare su ogni richiesta.
         { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
-        // Parte variabile: ricordi e data/ora correnti.
-        { type: "text", text: `Cose che sai sull'utente:\n${memories}\n\nData e ora attuali (${TIME_ZONE}): ${now}.` },
+        // Parte variabile: ricordi, data/ora ed eventuale modalità approfondita.
+        { type: "text", text: context },
       ],
-      tools: TOOLS,
+      tools: toolsFor(mode.model),
       messages,
     });
+
+    await recordUsage(mode.model, response.usage);
 
     switch (response.stop_reason) {
       case "refusal":
@@ -266,7 +386,21 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const answer = await askJarvis(question);
+    const spent = await monthSpendEur();
+    if (spent >= BUDGET_EUR) {
+      return textResponse(
+        `Ho raggiunto il budget di ${BUDGET_EUR} euro per questo mese. Riprendo dal primo del mese prossimo, oppure puoi alzare il limite.`,
+      );
+    }
+
+    let mode = wantsDeepMode(question) ? DEEP_MODE : NORMAL_MODE;
+    let prefix = "";
+    if (mode.deep && spent >= BUDGET_EUR * DEEP_MODE_BUDGET_SHARE) {
+      mode = NORMAL_MODE;
+      prefix = "Sono vicino al budget del mese, quindi uso il modello veloce. ";
+    }
+
+    const answer = prefix + (await askJarvis(question, mode));
     await saveExchange(question, answer);
     return textResponse(answer);
   } catch (err) {
@@ -276,6 +410,10 @@ Deno.serve(async (req: Request) => {
     }
     if (err instanceof Anthropic.AuthenticationError) {
       return textResponse("La chiave di Claude non è valida: controlla ANTHROPIC_API_KEY.", 500);
+    }
+    if (err instanceof Anthropic.PermissionDeniedError || err instanceof Anthropic.BadRequestError) {
+      // Per esempio: credito esaurito o limite di spesa raggiunto nella console di Anthropic.
+      return textResponse("Claude ha rifiutato la richiesta: controlla credito e limiti nella console di Anthropic.", 500);
     }
     if (err instanceof Anthropic.APIConnectionError) {
       return textResponse("Non riesco a raggiungere Claude, riprova tra poco.", 503);

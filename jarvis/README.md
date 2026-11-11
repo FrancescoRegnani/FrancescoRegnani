@@ -9,7 +9,38 @@ Cosa sa fare in questa prima versione:
 - rispondere a domande di ogni tipo, in modo breve e adatto alla voce;
 - **ricordare** cose su di te ("ricorda che lo studio chiude alle 18") e **dimenticarle** se glielo chiedi;
 - cercare sul **web** le informazioni aggiornate (notizie, meteo, orari);
-- tenere il filo della conversazione per circa 20 minuti, così puoi fare domande di seguito.
+- tenere il filo della conversazione per circa 20 minuti, così puoi fare domande di seguito;
+- usare **due cervelli**: uno veloce ed economico per le domande normali, e il modello più capace quando dici **"pensaci bene"** o **"sei sicuro?"**;
+- rispettare un **budget mensile** (15 € predefiniti).
+
+## Modello veloce e modello "pensaci bene"
+
+| Quando | Modello | Costo indicativo |
+|---|---|---|
+| Domande normali | Claude Haiku 5.5, ragionamento minimo | ~0,1 centesimi a domanda |
+| La domanda contiene "pensaci bene", "sei sicuro/a", "ragionaci bene", "pensa bene" | Claude Opus 5.5, ragionamento medio | ~3–5 centesimi a domanda |
+
+Esempi:
+- *"Quando scade il secondo acconto IRPEF?"* → modello veloce
+- *"Sei sicuro?"* → Opus ricontrolla la risposta precedente e la corregge se serve
+- *"Pensaci bene: conviene il forfettario con 60 mila euro di ricavi?"* → Opus
+
+## Budget di 15 € al mese
+
+Due protezioni, una dentro l'altra:
+1. **Contatore di Jarvis**: ogni chiamata a Claude viene registrata nella tabella `jarvis_usage` con il costo stimato. Quando la spesa del mese supera **l'80%** del budget, "pensaci bene" usa comunque il modello veloce; al **100%** Jarvis si ferma fino al primo del mese successivo (mese di calendario UTC).
+2. **Limite nella console di Anthropic** (da impostare tu): *Settings → Limits → Spend limit*. È il blocco definitivo, anche se la stima del contatore sbagliasse. Il limite è in dollari: per 15 € imposta circa **16 $**.
+
+Per vedere la spesa del mese (SQL Editor di Supabase):
+
+```sql
+select model, count(*) as chiamate, round(sum(cost_usd), 2) as dollari
+from public.jarvis_usage
+where created_at >= date_trunc('month', now())
+group by model;
+```
+
+Per cambiare il budget aggiungi il segreto `JARVIS_BUDGET_EUR` (per esempio `20`).
 
 ## Come è fatto
 
@@ -30,15 +61,19 @@ Apple Watch / iPhone  ──Siri──▶  Comando Rapido "Jarvis"
 
 ## 1. Prepara il server (una volta sola)
 
-1. **Chiave Claude**: su [console.anthropic.com](https://console.anthropic.com) crea una chiave API (*API Keys → Create Key*) e imposta un limite di spesa mensile (*Billing → Limits*).
+1. **Chiave Claude**: su [console.anthropic.com](https://console.anthropic.com) crea una chiave API (*API Keys → Create Key*) e imposta un limite di spesa mensile di circa 16 $ (*Settings → Limits*).
 2. **Token di Jarvis**: crea una password lunga e casuale (per esempio con l'app Password dell'iPhone). Servirà solo al tuo Comando Rapido per farsi riconoscere.
-3. **Database**: esegui `supabase/migrations/001_jarvis.sql` nel progetto Supabase (*SQL Editor*).
+3. **Database**: esegui `supabase/migrations/001_jarvis.sql` e `002_jarvis_usage.sql` nel progetto Supabase (*SQL Editor*).
 4. **Funzione**: pubblica `supabase/functions/jarvis/index.ts` con il nome `jarvis` e **verifica JWT disattivata** (l'autenticazione la fa il token di Jarvis).
 5. **Segreti**: in Supabase → *Edge Functions → Secrets* aggiungi:
    - `ANTHROPIC_API_KEY` = la chiave del punto 1
    - `JARVIS_TOKEN` = il token del punto 2
 
-   Opzionali: `JARVIS_MODEL` (predefinito `claude-haiku-5-5`, veloce ed economico; `claude-opus-5-5` per risposte più ragionate), `JARVIS_EFFORT` (`low` predefinito, per risposte rapide; `medium` o `high` per risposte più ragionate ma più lente).
+   Opzionali:
+   - `JARVIS_MODEL` (predefinito `claude-haiku-5-5`) e `JARVIS_EFFORT` (predefinito `low`): modello normale;
+   - `JARVIS_DEEP_MODEL` (predefinito `claude-opus-5-5`) e `JARVIS_DEEP_EFFORT` (predefinito `medium`): modello "pensaci bene";
+   - `JARVIS_BUDGET_EUR` (predefinito `15`): budget mensile;
+   - `JARVIS_USD_TO_EUR` (predefinito `0.95`, prudente): cambio usato per stimare la spesa in euro.
 
 L'indirizzo del server sarà: `https://<ID-PROGETTO>.supabase.co/functions/v1/jarvis`
 
@@ -87,11 +122,11 @@ Se dopo la prova ricevi:
 
 Per non pagare un secondo progetto, Jarvis è pubblicato nel progetto Supabase **ABILITA**:
 - indirizzo: `https://ourlmliotsgzrytrsofa.supabase.co/functions/v1/jarvis`
-- tabelle: `jarvis_memories`, `jarvis_messages` (separate da quelle dell'app)
+- tabelle: `jarvis_memories`, `jarvis_messages`, `jarvis_usage` (separate da quelle dell'app)
 
 **Per toglierlo da ABILITA** (per esempio per spostarlo in un progetto dedicato):
 1. Supabase → *Edge Functions* → `jarvis` → *Delete*.
-2. *SQL Editor*: `drop table public.jarvis_messages, public.jarvis_memories;`
+2. *SQL Editor*: `drop table public.jarvis_messages, public.jarvis_memories, public.jarvis_usage;`
 3. Rimuovi i segreti `ANTHROPIC_API_KEY` e `JARVIS_TOKEN`, a meno che non li usi anche altro.
 
 Per spostarlo, prima esporta i ricordi (`select * from public.jarvis_memories`), poi ripeti i passi del punto 1 nel nuovo progetto.
