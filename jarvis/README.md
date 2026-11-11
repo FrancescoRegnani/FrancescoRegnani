@@ -36,7 +36,7 @@ Apple Watch / iPhone  ──Siri──▶  Comando Rapido "Jarvis"
    - `ANTHROPIC_API_KEY` = la chiave del punto 1
    - `JARVIS_TOKEN` = il token del punto 2
 
-   Opzionali: `JARVIS_MODEL` (predefinito `claude-opus-5-5`), `JARVIS_EFFORT` (`low` predefinito, per risposte rapide; `medium` o `high` per risposte più ragionate ma più lente).
+   Opzionali: `JARVIS_MODEL` (predefinito `claude-haiku-5-5`, veloce ed economico; `claude-opus-5-5` per risposte più ragionate), `JARVIS_EFFORT` (`low` predefinito, per risposte rapide; `medium` o `high` per risposte più ragionate ma più lente).
 
 L'indirizzo del server sarà: `https://<ID-PROGETTO>.supabase.co/functions/v1/jarvis`
 
@@ -71,6 +71,19 @@ Poi:
 Se dopo la prova ricevi:
 - *"Non autorizzato"* → il token nel Comando Rapido non coincide con `JARVIS_TOKEN`;
 - *"La chiave di Claude non è valida"* → controlla `ANTHROPIC_API_KEY`.
+
+## Dove è pubblicato ora
+
+Per non pagare un secondo progetto, Jarvis è pubblicato nel progetto Supabase **ABILITA**:
+- indirizzo: `https://ourlmliotsgzrytrsofa.supabase.co/functions/v1/jarvis`
+- tabelle: `jarvis_memories`, `jarvis_messages` (separate da quelle dell'app)
+
+**Per toglierlo da ABILITA** (per esempio per spostarlo in un progetto dedicato):
+1. Supabase → *Edge Functions* → `jarvis` → *Delete*.
+2. *SQL Editor*: `drop table public.jarvis_messages, public.jarvis_memories;`
+3. Rimuovi i segreti `ANTHROPIC_API_KEY` e `JARVIS_TOKEN`, a meno che non li usi anche altro.
+
+Per spostarlo, prima esporta i ricordi (`select * from public.jarvis_memories`), poi ripeti i passi del punto 1 nel nuovo progetto.
 
 ## Privacy e sicurezza
 

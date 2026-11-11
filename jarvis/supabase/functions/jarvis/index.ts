@@ -6,14 +6,17 @@
 //   ANTHROPIC_API_KEY  chiave API di Claude
 //   JARVIS_TOKEN       password lunga e casuale che solo il tuo Comando Rapido conosce
 // Opzionali:
-//   JARVIS_MODEL       modello Claude (predefinito: claude-opus-5-5)
+//   JARVIS_MODEL       modello Claude (predefinito: claude-haiku-5-5, veloce ed economico;
+//                      claude-opus-5-5 per risposte più ragionate)
 //   JARVIS_EFFORT      low | medium | high (predefinito: low, per risposte veloci)
 // SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY sono forniti automaticamente da Supabase.
 
 import Anthropic from "npm:@anthropic-ai/sdk@1.8.0";
 import { createClient } from "npm:@supabase/supabase-js@2.119.0";
 
-const MODEL = Deno.env.get("JARVIS_MODEL") ?? "claude-opus-5-5";
+const MODEL = Deno.env.get("JARVIS_MODEL") ?? "claude-haiku-5-5";
+// Haiku usa la ricerca web di base e non ha il "paracadute" lato server per i rifiuti.
+const IS_HAIKU = MODEL.startsWith("claude-haiku");
 const EFFORT = (Deno.env.get("JARVIS_EFFORT") ?? "low") as "low" | "medium" | "high";
 const JARVIS_TOKEN = Deno.env.get("JARVIS_TOKEN") ?? "";
 const TIME_ZONE = "Europe/Rome";
@@ -24,7 +27,9 @@ const HISTORY_MAX_MESSAGES = 12;
 const MAX_LOOP_ITERATIONS = 6;
 const MAX_INPUT_CHARS = 4000;
 
-const anthropic = new Anthropic(); // legge ANTHROPIC_API_KEY
+// Creato al primo uso, così la funzione parte anche prima che la chiave sia impostata.
+let anthropicClient: Anthropic | null = null;
+const claude = () => (anthropicClient ??= new Anthropic()); // legge ANTHROPIC_API_KEY
 const db = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -79,7 +84,12 @@ const TOOLS: Anthropic.Beta.BetaToolUnion[] = [
     },
     strict: true,
   },
-  { type: "web_search_20260209", name: "web_search", max_uses: 3, user_location: { type: "approximate", country: "IT", timezone: TIME_ZONE } },
+  {
+    type: IS_HAIKU ? "web_search_20250305" : "web_search_20260209",
+    name: "web_search",
+    max_uses: 3,
+    user_location: { type: "approximate", country: "IT", timezone: TIME_ZONE },
+  },
 ];
 
 function textResponse(body: string, status = 200): Response {
@@ -198,11 +208,11 @@ async function askJarvis(question: string): Promise<string> {
   ];
 
   for (let i = 0; i < MAX_LOOP_ITERATIONS; i++) {
-    const response = await anthropic.beta.messages.create({
+    const response = await claude().beta.messages.create({
       model: MODEL,
       max_tokens: 4000,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
+      // Se il modello principale rifiuta, Anthropic riprova con un modello alternativo.
+      ...(IS_HAIKU ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const }),
       output_config: { effort: EFFORT },
       system: [
         // Parte fissa: messa in cache per risparmiare su ogni richiesta.
@@ -250,6 +260,10 @@ Deno.serve(async (req: Request) => {
 
   const question = (await readQuestion(req)).slice(0, MAX_INPUT_CHARS);
   if (!question) return textResponse("Non ho sentito nessuna domanda.", 400);
+
+  if (!Deno.env.get("ANTHROPIC_API_KEY")) {
+    return textResponse("Jarvis non è configurato: manca ANTHROPIC_API_KEY.", 500);
+  }
 
   try {
     const answer = await askJarvis(question);
