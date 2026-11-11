@@ -3,6 +3,8 @@
 Jarvis è un piccolo server su Supabase che risponde alle tue domande con Claude.
 Lo chiami con **"Ehi Siri, Jarvis"** da Apple Watch, iPhone o AirPods: detti la domanda, Jarvis risponde a voce.
 
+Funziona su **iPhone, Apple Watch e Mac** con lo stesso Comando Rapido.
+
 Cosa sa fare in questa prima versione:
 - rispondere a domande di ogni tipo, in modo breve e adatto alla voce;
 - **ricordare** cose su di te ("ricorda che lo studio chiude alle 18") e **dimenticarle** se glielo chiedi;
@@ -58,6 +60,15 @@ Apri l'app **Comandi** → **+** (nuovo comando) e aggiungi queste azioni, in or
 Poi:
 - rinomina il comando in **Jarvis** (il nome è la frase da dire a Siri);
 - nei dettagli del comando (icona ⓘ) attiva **Mostra su Apple Watch**.
+
+### Sul Mac
+
+Se iPhone e Mac usano lo stesso Apple ID con iCloud attivo per *Comandi*, il comando **Jarvis** compare da solo anche sul Mac.
+- Con Siri: *"Ehi Siri, Jarvis"*.
+- Con la tastiera: app Comandi → doppio clic su Jarvis → *Dettagli* → *Aggiungi scorciatoia da tastiera* (per esempio ⌃⌥J).
+- Nella barra dei menu: nei dettagli attiva *Fissa nella barra dei menu*.
+
+Se sul Mac preferisci scrivere invece di parlare, duplica il comando e sostituisci *Detta testo* con *Chiedi input* (tipo *Testo*).
 
 ## 3. Usalo
 
