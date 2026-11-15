@@ -169,9 +169,19 @@ Cose che puoi chiedere direttamente:
 - *"Cosa sai di me?"* → usa la ricerca/dialettica sulla tua rappresentazione.
 - *"Ricordati che da oggi lavoro su ProExam invece che su X"* → crea una nuova conclusione; quelle vecchie vengono superate.
 - *"Dimentica che…"* → Claude può cancellare una conclusione (`delete_conclusion`).
-- *"Imposta rememberTool a true"* → abilita lo strumento `honcho_remember` per richiami più profondi (richiede riavvio).
+- *"Imposta rememberTool a true"* → abilita lo strumento `honcho_remember` per richiami più profondi (richiede riavvio; ogni uso costa fino a ~0,25 $ su Cloud).
 
 ---
+
+## Costi
+
+- **Honcho locale**: gratis; paghi solo il modello LLM che scegli (o zero con un modello locale tipo Ollama).
+- **Honcho Cloud** (prezzi su honcho.dev a novembre 2026): 5 $ di credito gratis all'iscrizione, poi
+  a consumo — 2 $ per milione di token salvati; le domande "ragionate" (dialettica) costano da
+  0,001 $ (minimal) a 0,50 $ (max), 0,05 $ a livello medium.
+- Stima d'uso intenso (≈50 scambi/giorno): 1–2 milioni di token/mese → circa 2–4 $/mese.
+- Per spendere meno: lascia `rememberTool: false` e la dialettica per-turno disattivata (default),
+  e imposta `messageUpload.summarizeAssistant: true` per salvare un riassunto delle risposte invece del testo intero.
 
 ## Privacy (il "warning" del video)
 

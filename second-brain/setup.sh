@@ -49,7 +49,7 @@ fi
   "globalOverride": true,
   "workspace": "second-brain",
   "hosts": {
-    "claude_code": { "aiPeer": "claude", "rememberTool": true },
+    "claude_code": { "aiPeer": "claude", "rememberTool": false },
     "codex": { "aiPeer": "codex" },
     "cursor": { "aiPeer": "cursor" }
   },
