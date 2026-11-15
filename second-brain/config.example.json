@@ -1,0 +1,36 @@
+{
+  "_comment": "Esempio di ~/.honcho/config.json per un unico 'second brain' condiviso. Rimuovi le chiavi che iniziano con _ se vuoi. Generalo con second-brain/setup.sh.",
+
+  "apiKey": "hch-LA-TUA-CHIAVE",
+  "peerName": "francesco",
+
+  "_comment_shared": "globalOverride + workspace unico = tutti gli strumenti leggono e scrivono nello stesso cervello",
+  "globalOverride": true,
+  "workspace": "second-brain",
+  "hosts": {
+    "claude_code": { "aiPeer": "claude", "rememberTool": true },
+    "codex": { "aiPeer": "codex" },
+    "cursor": { "aiPeer": "cursor" }
+  },
+
+  "observationMode": "unified",
+  "sessionStrategy": "per-directory",
+
+  "saveMessages": true,
+  "saveToolUse": false,
+  "saveGitEvents": false,
+
+  "reasoningLevel": "medium",
+  "injection": {
+    "sessionStart": ["directives", "summary", "peerCard"],
+    "perTurn": ["userContext"]
+  },
+
+  "_comment_endpoint": "Per Honcho locale usa: { \"environment\": \"local\" } (http://localhost:8000/v3) e togli apiKey",
+  "endpoint": { "environment": "production" },
+
+  "redactPatterns": [],
+  "statusline": "on",
+  "enabled": true,
+  "logging": true
+}

@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "honcho": {
+      "source": {
+        "source": "github",
+        "repo": "plastic-labs/claude-honcho"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "honcho@honcho": true
+  }
+}

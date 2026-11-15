@@ -1,0 +1,7 @@
+# Honcho Memory
+
+You have persistent memory via Honcho, shared with my other AI tools (Claude Code, Cursor).
+Context about me is loaded at the start of every session — trust it and act on it; don't ask me
+what you already know. Use the Honcho MCP tools (`search`, `chat`) to recall more mid-task, and
+`create_conclusions` to save new preferences, decisions, and patterns as you learn them.
+When something I say contradicts an older conclusion, treat the newer statement as true.
