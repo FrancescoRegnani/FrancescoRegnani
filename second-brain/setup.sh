@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Crea ~/.honcho/config.json configurato come un unico "second brain" condiviso
-# tra Claude Code, Codex e Cursor. Uso: bash second-brain/setup.sh
+# tra Claude Code, Codex e Cursor. Uso: bash second-brain/setup.sh <nome> [cloud|locale]
 set -euo pipefail
 
 CONFIG_DIR="${HONCHO_CONFIG_DIR:-$HOME/.honcho}"
@@ -8,26 +8,27 @@ CONFIG_FILE="$CONFIG_DIR/config.json"
 
 echo "== Second Brain (Honcho) — configurazione =="
 
-default_peer="${HONCHO_PEER_NAME:-${USER:-me}}"
-read -r -p "Il tuo nome nella memoria (peerName) [$default_peer]: " peer
-peer="${peer:-$default_peer}"
+# Uso senza domande:
+#   1) copia la API key (hch-...) da app.honcho.dev
+#   2) bash second-brain/setup.sh francesco        (cloud, chiave letta dagli appunti)
+#      bash second-brain/setup.sh francesco locale (Honcho in locale, nessuna chiave)
+peer="${1:-${HONCHO_PEER_NAME:-${USER:-me}}}"
+mode="${2:-cloud}"
 # solo lettere, numeri, - e _
 peer="$(printf '%s' "$peer" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | sed 's/-*$//')"
 
-read -r -p "Usi Honcho Cloud (c) o locale (l)? [c]: " mode
-mode="${mode:-c}"
-
-if [[ "$mode" == "l" || "$mode" == "L" ]]; then
+if [[ "$mode" == "locale" || "$mode" == "local" || "$mode" == "l" ]]; then
   key_line=""
   endpoint='{ "environment": "local" }'
 else
   key="${HONCHO_API_KEY:-}"
-  if [[ -z "$key" ]]; then
-    read -r -s -p "Incolla la API key di app.honcho.dev (hch-...): " key
-    echo
+  # Mac: prende la chiave dagli appunti (quello che hai copiato con Cmd+C)
+  if [[ -z "$key" ]] && command -v pbpaste >/dev/null 2>&1; then
+    key="$(pbpaste | tr -d '[:space:]')"
   fi
   if [[ "$key" != hch-* ]]; then
-    echo "Errore: la chiave deve iniziare con 'hch-'." >&2
+    echo "Errore: non trovo la API key." >&2
+    echo "Copia la chiave (inizia con hch-) da app.honcho.dev con Cmd+C e rilancia il comando." >&2
     exit 1
   fi
   key_line="  \"apiKey\": \"$key\","

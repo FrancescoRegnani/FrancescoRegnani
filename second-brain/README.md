@@ -84,10 +84,10 @@ su `http://localhost:8000`.
 Dalla cartella di questo repository:
 
 ```bash
-bash second-brain/setup.sh
+bash second-brain/setup.sh francesco
 ```
 
-Lo script ti chiede il tuo nome (la tua identità nella memoria) e se usi cloud o locale, poi scrive
+Prima copia la API key con Cmd+C: lo script la legge dagli appunti (per Honcho locale aggiungi `locale` in fondo al comando). Poi scrive
 `~/.honcho/config.json`. Se il file esiste già ne fa una copia di backup prima di sovrascriverlo.
 
 Il punto chiave (quello del capitolo *"One shared brain"*) è che la config imposta:
