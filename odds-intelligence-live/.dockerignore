@@ -1,0 +1,13 @@
+# Mai copiare segreti o dati locali nell'immagine.
+.env
+.env.*
+!.env.example
+context.json
+data/
+history/
+*.sqlite3*
+.git/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/

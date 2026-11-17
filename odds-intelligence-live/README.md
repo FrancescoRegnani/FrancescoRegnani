@@ -1,115 +1,135 @@
-# Odds Intelligence Live — monitor di rimonte ogni 60 secondi
+# Odds Intelligence Live — monitor di rimonte con modello calibrato
 
-Servizio Python 3.12 / Docker per osservare il tennis maschile e femminile, il calcio e il basket da feed esterni e **proporre** un avviso Telegram solo quando una stima prudenziale supera strettamente il **70%**. Gira in modo autonomo su un server già acceso; non richiede che ChatGPT rimanga aperto.
+Servizio Python 3.12 / Docker che ogni 60 secondi osserva tennis (ATP/WTA/Challenger/ITF), calcio e basket e
+**propone** un avviso Telegram quando un favorito pre-partita è in svantaggio e la probabilità di rimonta,
+**misurata su uno storico e validata fuori campione**, ha un limite inferiore di confidenza strettamente
+superiore al 70%.
 
-> **Stato:** prototipo tecnico con test offline. **Non è ancora in funzione sul tuo server.** Le percentuali sono basate sul consenso delle quote live senza margine e su una regola euristica di penalizzazione, **non su un modello storicamente calibrato**. Pertanto **non è corretto trattare un 73% mostrato dal programma come il 73% verificato di successi futuri**. È necessario un periodo di raccolta dati, il backtest e una calibrazione prima dell'uso operativo come modello statistico di betting.
+> **Stato (v0.2):** codice e 38 test offline funzionanti. **Non è installato su alcun server e non è
+> collegato a chiavi reali.** Senza uno storico importato e validato, il servizio **non emette alcun alert**
+> (fail closed): raccoglie e archivia dati. `DRY_RUN=true` di default.
 
-## Fonti e copertura
+## Cosa è cambiato rispetto alla v0.1
 
-- [AllSports API](https://allsportsapi.com/) fornisce punteggi e progressi delle partite: tennis, calcio, basket.
-- [The Odds API](https://the-odds-api.com/) fornisce mercati `h2h` da diversi bookmaker, quando disponibili. Il progetto acquisisce **almeno tre quote fresche**, elimina matematicamente il margine, usa la mediana e respinge mercati discordanti.
-- [Telegram Bot API](https://core.telegram.org/bots/api#sendmessage) invia il messaggio, se `DRY_RUN=false`.
-- Informazioni su infortuni e riposo sono **sconosciute**, salvo inserimento manuale di riscontri recenti in `context.json`. Senza riscontro, il punteggio statistico riceve una penalizzazione. Se esiste un infortunio accertato o alta fatica, l'avviso è soppresso.
+| Problema v0.1 | Soluzione v0.2 |
+|---|---|
+| La "probabilità" era la quota live meno una penalità fissa: ogni alert, per costruzione, indicava una scommessa a valore atteso negativo | Probabilità = frequenza storica di rimonta per stato di gioco e forza pre-partita, con limite inferiore di Wilson. Con `REQUIRE_VALUE=true` l'alert parte solo se la quota live offerta supera la quota equa del modello (+`MIN_EDGE`) |
+| Nessuna calibrazione | Comando `validate`: addestramento prima di una data, verifica dopo; Brier, log loss, fasce di calibrazione. Uno stato/esito genera alert **solo se promosso** |
+| In DRY_RUN non si archiviava nulla | Ogni valutazione (alert, shadow, blocked + motivo), snapshot di punteggio, quote pre e live ed esito finale vanno in SQLite. `report` misura la calibrazione reale, `import-live` riusa questi dati come storico |
+| `.env` copiato nell'immagine Docker | `.dockerignore`, Dockerfile che copia solo `monitor/`, utente non-root, healthcheck |
+| Budget esaurito in ~5 ore | Calendario eventi gratuito (`/events`); quote live solo per eventi in corso dove il favorito è sotto e lo stato è modellabile; quote pre al massimo una volta l'ora per campionato |
+| Challenger non coperti da The Odds API | Quote pre-partita AllSports (metodo `Odds`) indicizzate per `event_key`, anche Challenger/ITF. Alert Challenger solo con storico Challenger dedicato (`TENNIS_MODEL_TIERS`) |
+| Codice morto (`stale`), tornei tennis scelti in ordine alfabetico, retry assenti | Rimossi o corretti; retry con backoff su errori di rete e 429/5xx (mai su Telegram, per non duplicare) |
 
-**Non è un feed universale:** l'esistenza di un punteggio live non garantisce le quote compatibili. I Challenger e i tornei minori, il basket meno seguito o una partita di calcio periferica potrebbero non essere coperti da The Odds API. Il servizio non inventa le quote mancanti. Le verifiche sui precedenti, xG, statistiche live dettagliate, infortuni e riposo automatico **non sono ancora integrate**: la prima versione non soddisfa integralmente il requisito di valutazione multifattoriale. Nessuna notifica viene emessa dove mancano mercato coerente e quote pregara già osservate.
+## Come decide (tutte le condizioni devono essere vere)
 
-## Logica di selezione
+1. Chi è sotto era il favorito: prob. pre-partita senza margine ≥ `MIN_PREMATCH_PROBABILITY`. Per il tennis
+   anche quota pre ≤ `MAX_TENNIS_PREMATCH_ODDS` (1,20). La quota pre usata è l'**ultima osservata prima dell'inizio**.
+   Si conservano anche la prima osservata e l'origine.
+2. Lo **stato di gioco è coperto dallo storico**:
+   - tennis: favorito sotto nei set (0-1; nei 5 set anche 0-2 e 1-2), all'inizio del set successivo
+     (≤ `TENNIS_MAX_GAMES_INTO_SET` game giocati, al massimo 1 game di svantaggio). Il formato a 3 o 5 set è
+     dedotto da categoria e torneo; se è incerto, niente alert;
+   - calcio: **all'intervallo** (o fino a `FOOTBALL_HT_TOLERANCE_MIN` minuti dopo il 45'), con stati -1 e -2+.
+     Esiti distinti: **vittoria** e **almeno pareggio**;
+   - basket: **nessuno storico calibrato disponibile ⇒ mai alert**. Le situazioni vengono archiviate per
+     costruirlo.
+3. Modello empirico: esempi storici dello stesso stato con prob. pre entro ±`MODEL_BANDWIDTH`. Servono almeno
+   `MODEL_MIN_SAMPLE` esempi. Si usa il **limite inferiore** di Wilson (z=`MODEL_Z`, 90% unilaterale) e deve
+   essere **> 70%**.
+4. Lo stato/esito è **promosso dalla validazione fuori tempo**: almeno `VALIDATION_MIN_ALERTS` alert simulati
+   nel periodo di test, frequenza osservata > soglia, scarto predetto/osservato ≤ `VALIDATION_MAX_GAP`.
+   Ogni nuovo import di storico azzera le promozioni.
+5. Mercato live (The Odds API, ≥3 bookmaker freschi, divergenza ≤10%):
+   - deve esistere se `REQUIRE_LIVE_MARKET=true`;
+   - non deve essere più basso del modello di oltre `MAX_MODEL_MARKET_GAP`, perché potrebbe sapere qualcosa,
+     per esempio un infortunio;
+   - con `REQUIRE_VALUE=true`, la quota offerta deve essere ≥ (1+`MIN_EDGE`)/probabilità.
 
-1. Ogni 60 secondi richiede i live score per i tre sport.
-2. Chiama solo le competizioni offerte dal provider di quote; tenta l'identificazione dei nomi fra feed. Ambiguità o discordanza = esclusione.
-3. Salva le quote **prima dell'inizio** nel database locale. Se il servizio viene avviato a partita già iniziata e non dispone di questo dato, non può segnalare quel match.
-4. Cerca una squadra/tennista in svantaggio e inizialmente chiaramente favorito (minimo 62% di quota implied senza margine; parametrizzabile). **Per il tennis impone anche la quota pre-match registrata <=1,20** (`MAX_TENNIS_PREMATCH_ODDS`); se il prezzo pre-gara non è stato registrato, esclude. Attenzione: è la prima quota *osservata dal servizio* prima della partita, non necessariamente la vera quota d'apertura storica.
-5. Calcola `P_mercato = mediana(1/quota_esito / somma(1/quote_tutti_esiti))`, cioè probabilità implicita de-vig per ciascun bookmaker. **Non equivale a una frequenza storica misurata.**
-6. Penalizzazione prudenziale: 3 punti percentuali + metà divergenza fra bookmaker + 1,5 punti se infortuni non verificati + 1,5 se affaticamento non verificato. Se il valore finale non supera **strettamente** 70%, esclude.
-7. Tennis e basket: esito *vittoria finale*. Calcio: *vittoria finale* e, separatamente, *almeno pareggio* (somma matematica degli esiti 1 e X o 2 e X del mercato 1X2). Per l'almeno pareggio non inventa una quota double chance offerta dal bookmaker; mostra `n/d`.
-8. Invia al massimo **una segnalazione per partita**; tutte le segnalazioni sono conservate in SQLite.
+   Per "almeno pareggio" non esiste una quota live double chance nei feed: con `REQUIRE_VALUE=true` non parte
+   alcun alert su quell'esito.
+6. `context.json`: un infortunio confermato o un'alta fatica bloccano l'alert. Senza riscontro il messaggio
+   dice "non verificati". Con `REQUIRE_VERIFIED_CONTEXT=true` il riscontro diventa obbligatorio.
+7. Una sola segnalazione per partita.
 
-Il sistema **non garantisce vantaggio sul bookmaker**: per provarlo occorre confrontare una probabilità **calibrata** con la quota realmente offerta sull'esito preciso e tenere conto dei margini e della varianza.
+## Dati storici: da dove e come
+
+Nessun download automatico. Scarica tu i file e rispetta i termini delle fonti. football-data.co.uk, per
+esempio, dichiara i dati gratuiti "per uso privato, non per prodotti commerciali né per raccolta automatica":
+se il servizio è per un cliente, verifica la licenza o acquista dati con licenza adeguata.
+
+- **Calcio** (CSV stile football-data.co.uk): `Date, HomeTeam, AwayTeam, FTHG, FTAG, HTHG, HTAG` e una terna
+  di quote 1X2 (`AvgH/D/A`, `BbAvH/D/A`, `PSH/D/A`, `B365H/D/A`, oppure le versioni di chiusura). Il
+  risultato usato è quello dei 90'.
+- **Tennis** (CSV stile tennis-data.co.uk; colonne **da verificare sul file reale**, sito non consultabile
+  durante lo sviluppo): `Date, "Best of", W1..W5, L1..L5, Comment` e una coppia di quote (`AvgW/AvgL`,
+  `PSW/PSL`, `B365W/B365L`). Sono usate solo le partite `Completed`. Se il file è .xlsx, salvalo in CSV.
+- **Dati raccolti dal servizio**: `import-live` trasforma le valutazioni archiviate con esito noto in storico.
+  È l'unica strada per basket e Challenger, se non hai uno storico dedicato.
+
+```bash
+mkdir -p history   # copia qui i CSV
+docker compose run --rm monitor python -m monitor import-history --sport football /history/E0_2324.csv /history/I1_2324.csv
+docker compose run --rm monitor python -m monitor import-history --sport tennis --tier atp /history/atp_2023.csv
+docker compose run --rm monitor python -m monitor validate --cutoff 2024-07-01
+docker compose run --rm monitor python -m monitor status
+```
+
+Scegli `--cutoff` in modo da lasciare nel test almeno una stagione intera. Se nessuno stato viene promosso, il
+servizio continua a raccogliere dati senza inviare nulla: è il comportamento voluto.
 
 ## Installazione Docker (Linux/VPS)
 
-Requisiti: Docker con `docker compose`, una rete HTTPS in uscita, abbonamenti API validi per gli sport interessati, bot Telegram e ID chat. Server con sistema aggiornato e Docker; **non pubblicare alcuna porta in ingresso**.
-
 ```bash
-unzip odds-intelligence-live.zip
-cd odds-intelligence-live
-cp .env.example .env
+cp .env.example .env            # inserisci le chiavi SOLO sul server
 cp context.example.json context.json
-mkdir -p data
-```
-
-Apri `.env` in un editor e inserisci:
-
-- `ALLSPORTS_API_KEY` → chiave da AllSports API.
-- `ODDS_API_KEY` → chiave da The Odds API, con sufficiente credito e supporto degli sport in-play.
-- `TELEGRAM_BOT_TOKEN` → creato con il bot ufficiale [@BotFather](https://t.me/BotFather).
-- `TELEGRAM_CHAT_ID` → identificativo chat a cui il bot può scrivere (dopo averlo avviato).
-
-**Proteggi `.env`**, non copiarlo in chat e non inviare screenshot con token. Tienilo fuori da backup o repo pubblici. Non impostare ancora `DRY_RUN=false`.
-
-```bash
+mkdir -p data history
+sudo chown -R 10001:10001 data  # il container gira come utente non-root 10001
 docker compose up -d --build
 docker compose logs -f --tail=80
+docker compose ps               # colonna STATUS: healthy/unhealthy (heartbeat ogni ciclo)
 ```
 
-Il log di ogni minuto mostra quante partite in svantaggio e quote valide sono state esaminate, oltre agli eventuali candidati. **In simulazione nessun messaggio viene spedito**, anche se Telegram è configurato.
+Chiavi: `ALLSPORTS_API_KEY` (punteggi, quote pre, risultati: obbligatoria) e `ODDS_API_KEY` (quote live:
+obbligatoria con `REQUIRE_LIVE_MARKET=true`). Servono anche `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`
+(creato con [@BotFather](https://t.me/BotFather)). Non condividere `.env` e non committarlo.
 
-Solo dopo verifica di dati, modello e soglie, modifica `.env` in `DRY_RUN=false`, poi:
+Passa a `DRY_RUN=false` solo dopo `validate` con stati promossi e una revisione di `report` sui dati live, poi
+`docker compose up -d --force-recreate`.
 
-```bash
-docker compose up -d --force-recreate
-```
+## Comandi
 
-Per fermare il monitor: `docker compose stop`. Lo storico delle quote pregara e degli avvisi resta nella cartella `data`.
+| Comando | Cosa fa |
+|---|---|
+| `python -m monitor run` | servizio (default) |
+| `python -m monitor demo` | pipeline completa su dati **sintetici**, nessuna rete |
+| `python -m monitor import-history --sport football\|tennis [--tier atp\|wta\|challenger\|itf] FILE...` | importa storico |
+| `python -m monitor import-live` | usa le valutazioni live con esito come storico |
+| `python -m monitor validate --cutoff AAAA-MM-GG` | validazione fuori tempo e promozione |
+| `python -m monitor report` | calibrazione osservata di alert/shadow archiviati |
+| `python -m monitor status` | crediti, storico per stato, stati promossi |
 
-## Test senza API
+Test: `python3 -m unittest discover -s tests -v`
 
-Su un PC con Python 3.12 (o altra versione recente che supporti `zoneinfo`):
+## Costi e copertura (da documentazione ufficiale, verificare sul proprio piano)
 
-```bash
-python3 -m unittest discover -s tests -v
-python3 -m monitor demo
-```
+- The Odds API: `/sports` ed `/events` non consumano crediti. `/odds` costa mercati × regioni (qui 1). Le
+  intestazioni `x-requests-remaining` vengono registrate (`status`). Il tennis è coperto solo per i tornei
+  ATP/WTA principali, **non i Challenger/ITF**.
+- AllSports: `Livescore`, `Odds` (pre-partita, con from/to), `Fixtures` (esiti). Il tennis include
+  Challenger e ITF. Alcuni valori di stato (es. "Half Time", "Quarter 3") **non sono confermati dalla
+  documentazione**: il codice li gestisce in modo prudente, ma vanno verificati sui dati reali.
+- `MAX_ODDS_REQUESTS_PER_DAY` (default 500) è un tetto rigido. Le chiamate live hanno priorità su quelle
+  pre-partita.
 
-La demo usa dati **inventati, riconoscibili** e non contatta alcun bookmaker.
+## Limiti che restano
 
-## Copertura e costi
+- Lo storico misura lo stato "inizio set" o "intervallo": non usa statistiche live (break, xG, rossi, falli),
+  forma, calendario o riposo. Il controllo di coerenza col mercato live serve proprio a intercettare
+  informazioni che il modello non vede.
+- Infortuni e fatica non hanno ancora un feed automatico: c'è solo `context.json` manuale.
+- La quota live per "almeno pareggio" non è disponibile.
+- L'abbinamento fra feed è per nome (fail closed se ambiguo). Un mapping per ID non è ancora disponibile.
+- Il basket non ha storico: niente alert finché `import-live` + `validate` non promuovono qualche stato.
 
-- `WATCH_SPORT_KEYS` = chiavi delle leghe che desideri monitorare. La lista offerta in quel momento si consulta da The Odds API; chiavi inesistenti vengono ignorate. I tennis event `tennis_*` vengono scoperti automaticamente fino a `MAX_AUTO_TENNIS_KEYS`.
-- Con **12 sport keys e 60 secondi di intervallo**, il consumo teorico è **17.280 chiamate quote in 24 ore** (prima dei moltiplicatori del piano/provider). Il default `MAX_ODDS_REQUESTS_PER_DAY=4000` limita il consumo, ma il monitor **smetterà di consultare quote** quando avrà raggiunto quel tetto giornaliero. Puoi restringere le leghe o aumentare il budget consapevolmente.
-- `POLL_SECONDS=60` non è la latenza garantita del mercato: ogni provider ha ritardi e cicli di aggiornamento propri, e ogni richiesta impiega tempo.
-- `MAX_ODDS_AGE_SECONDS=180`: quote più vecchie di 3 minuti sono scartate; non si tratta di conferma tick-by-tick.
-- `MIN_BOOKMAKERS=3` e `MAX_BOOKMAKER_SPREAD=0.10` respingono dati troppo scarsi o discordanti.
-- `MAX_TENNIS_PREMATCH_ODDS=1.20` mantiene il criterio originario dei grandi favoriti per ATP/WTA/Challenger; si applica al **prezzo pre-gara archiviato** dal servizio.
-- `ALERT_THRESHOLD=0.70` è una soglia **stretta**: una stima uguale al 70,00% non viene segnalata.
-- In caso di feed inatteso, perdita di connessione o quota insufficiente, il monitor salta quella verifica. Nessuna stima viene inventata.
-
-## Riscontri manuali su forma/infortuni/affaticamento
-
-Facoltativamente, nel `context.json` si possono registrare informazioni controllate entro 24 ore per una singola partita (`event_key` del feed punteggi):
-
-```json
-{
-  "tennis:1234567": {
-    "verified_at": "2026-11-17T14:00:00+01:00",
-    "injury": "clear",
-    "fatigue": "low",
-    "sources": ["https://example.org/fonte-ufficiale-reale"]
-  }
-}
-```
-
-È solo un **esempio di formato**: sostituisci identificativo, data e URL con verifiche reali. Valori ammessi: `injury: clear/confirmed`, `fatigue: low/high`; senza fonti HTTPS e orario recente la dichiarazione viene ignorata. `context.json` non rende automaticamente comprovata una notizia: chi la inserisce deve verificare davvero la fonte.
-
-## Prima del rilascio definitivo
-
-- Raccogliere un archivio di quote pre-match, snapshot live ed esiti finali, con identificativi certi, per almeno diversi mesi e una numerosità sufficiente per sport e condizioni di svantaggio.
-- Calibrare probabilità con intervalli d'incertezza e test fuori campione, **soprattutto nella fascia 70–90%**; misurare errore Brier, log loss e calibrazione, scartando le categorie non robuste.
-- Integrare statistiche live dello sport (tennis: break e turni servizio; calcio: minuto, xG, rossi, possesso; basket: possessi, tempo e fallo), più dati affidabili su assenze, forma, calendario e affaticamento.
-- Implementare validazione più profonda degli identificativi e aggiornamenti per eventi sostanziali, eventuale fallback sui bookmaker in-play dove permesso.
-- Valutare la copertura reale dei Challenger/ITF/WTA e il costo delle API sul contratto scelto.
-
-## Privacy, dati e responsabilità
-
-Il programma non piazza scommesse e non si collega a conti di gioco. Non è una promessa di vincita né una consulenza per puntate. È uno strumento di raccolta e scrematura dati da convalidare. Le chiavi sono usate solo per richieste HTTPS ai provider configurati; non vengono stampate nei log. Il database SQLite contiene snapshot di probabilità e identificativi partita, non token Telegram.
-
+Il programma non piazza scommesse, non garantisce vincite e non è consulenza di gioco.

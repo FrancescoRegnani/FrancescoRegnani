@@ -40,11 +40,11 @@ né spendere crediti API senza mia autorizzazione. Per prima cosa esegui i
 test, indicami esattamente cosa funziona, quali limiti ci sono e proponimi
 una roadmap per arrivare a una versione realmente affidabile." 
 
-STATO ALL'ESPORTAZIONE
+STATO ALL'ESPORTAZIONE (aggiornato alla v0.2)
 ---------------------
-- Prototipo Python/Docker già scritto, codice e test inclusi.
-- 15 test di unità passati nell'ambiente originale.
-- Modello solo euristico, NON backtestato né calibrato.
+- Prototipo Python/Docker, 38 test offline superati (Python 3.12 e 3.13).
+- Modello empirico calibrabile su storico + validazione fuori tempo: senza
+  storico importato e validato NON parte alcun alert (fail closed).
 - Servizio NON installato sul server e NON attivo.
 - Default DRY_RUN=true: nessuna notifica Telegram.
 - Chiavi API e token assenti dal pacchetto.

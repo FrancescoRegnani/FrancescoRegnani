@@ -3,11 +3,19 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    user: "10001:10001"
     volumes:
       - ./data:/data
       - ./context.json:/app/context.json:ro
+      # CSV storici scaricati manualmente, solo lettura (per import-history).
+      - ./history:/history:ro
     security_opt:
       - no-new-privileges:true
     read_only: true
     tmpfs:
       - /tmp
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

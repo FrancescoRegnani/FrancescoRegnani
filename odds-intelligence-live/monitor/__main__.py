@@ -1,241 +1,181 @@
-"""Monitor live ogni 60 secondi. Default: modalità osservazione, nessun invio."""
+"""Riga di comando.
+
+  python -m monitor run                      # servizio (DRY_RUN=true di default)
+  python -m monitor demo                     # esempio offline con dati SINTETICI
+  python -m monitor import-history --sport football FILE.csv [...]
+  python -m monitor import-history --sport tennis --tier atp FILE.csv [...]
+  python -m monitor import-live              # usa come storico le valutazioni live con esito noto
+  python -m monitor validate --cutoff 2025-07-01
+  python -m monitor report                   # calibrazione delle valutazioni archiviate
+  python -m monitor status
+"""
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import os
-import signal
+import random
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import replace
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from zoneinfo import ZoneInfo
+from datetime import date, datetime, timedelta, timezone
 
+from .app import ROME, Monitor, format_alert, sport_for_key, trusted_context  # noqa: F401  (riesportati)
 from .config import Config
-from .engine import Match, Market, Signal, estimate, map_outcome, matches_market, parse_market, parse_match
-from .feeds import AllSports, FeedError, Telegram, TheOddsAPI
+from .decision import Quote, evaluate
+from .engine import parse_match
+from .history import import_file
+from .model import EmpiricalModel, Example, validate, wilson
 from .storage import Storage
 
-LOG = logging.getLogger("odds-monitor")
-ROME = ZoneInfo("Europe/Rome")
-SPORTS = ("tennis", "football", "basketball")
+
+def _pct(x) -> str:
+    return "  n/d" if x is None else f"{x:6.1%}"
 
 
-def sport_for_key(key: str) -> str | None:
-    if key.startswith("tennis_"):
-        return "tennis"
-    if key.startswith("soccer_"):
-        return "football"
-    if key.startswith("basketball_"):
-        return "basketball"
-    return None
+def cmd_import_history(cfg: Config, args) -> None:
+    db = Storage(cfg.db_path)
+    for path in args.files:
+        examples, skipped = import_file(path, args.sport, tier=args.tier or "")
+        db.replace_history(f"{args.sport}:{args.tier or ''}:{path}", examples)
+        print(f"{path}: {len(examples)} situazioni di svantaggio del favorito importate, {skipped} righe scartate")
+    print("Le validazioni precedenti sono state azzerate: esegui `python -m monitor validate --cutoff AAAA-MM-GG`.")
 
 
-def trusted_context(path: str, match: Match, now: datetime) -> dict:
-    """Solo attestazioni recenti, con link HTTPS; altrimenti informazioni sconosciute."""
-    try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        item = data.get(f"{match.sport}:{match.event_id}", {})
-        if not isinstance(item, dict):
-            return {}
-        stamped = datetime.fromisoformat(str(item.get("verified_at", "")).replace("Z", "+00:00"))
-        if stamped.tzinfo is None or not timedelta(0) <= now - stamped <= timedelta(hours=24):
-            return {}
-        sources = item.get("sources", [])
-        if not isinstance(sources, list) or not sources or not all(isinstance(x, str) and x.startswith("https://") for x in sources):
-            return {}
-        if item.get("injury") not in {"clear", "confirmed"} or item.get("fatigue") not in {"low", "high"}:
-            return {}
-        return item
-    except (OSError, ValueError, TypeError, AttributeError):
-        return {}
+def cmd_import_live(cfg: Config) -> None:
+    db = Storage(cfg.db_path)
+    examples = []
+    for r in db.resolved_evaluations():
+        if r["outcome"] != "win" or r["pre_prob"] is None:
+            continue   # un esempio per partita/stato; win e not_lose si ricavano dallo stesso esito
+        winner, target = r["winner"], r["target_side"]
+        examples.append(Example(r["state"], r["first_seen"][:10], r["pre_prob"], int(winner == target),
+                                int(winner in (target, "draw")), "live-collected"))
+    db.replace_history("live-collected", examples)
+    print(f"{len(examples)} situazioni live con esito noto inserite nello storico (fonte live-collected).")
 
 
-def format_alert(signal_: Signal, now: datetime, dry_run: bool) -> str:
-    m = signal_.match
-    url = "https://the-odds-api.com/"  # URL dei dati, non della singola partita.
-    positives = "; ".join(signal_.evidence)
-    when = now.astimezone(ROME).strftime("%d/%m/%Y %H:%M:%S %Z")
-    pre = f"{signal_.pre_probability:.1%}"
-    pre_quote = f"{signal_.pre_quote:.2f}" if signal_.pre_quote else "n/d"
-    live_quote = f"{signal_.quote:.2f}" if signal_.quote is not None else "n/d (mercato double chance non acquisito)"
-    return (f"{'[SIMULAZIONE] ' if dry_run else ''}POSSIBILE RIMONTA\n"
-            f"{m.sport.upper()} | {m.competition or 'Competizione da verificare'}\n"
-            f"{m.first} - {m.second}\n"
-            f"Punteggio: {m.score} | fase: {m.phase} | ora Italia: {when}\n"
-            f"Squadra/giocatore in svantaggio: {m.first if m.behind == 'first' else m.second}\n"
-            f"Esito: {signal_.outcome}\n"
-            f"Probabilità finale stimata: {signal_.estimated:.1%} (euristica, NON calibrata)\n"
-            f"Mercato live senza margine: {signal_.market_probability:.1%}; "
-            f"rettifica prudenziale: -{signal_.uncertainty:.1%}\n"
-            f"Probabilità da quote pre-partita: {pre}; quota pre osservata: {pre_quote}\n"
-            f"Quota live mediana: {live_quote} | quota equa stimata: {signal_.fair_quote:.2f}\n"
-            f"Fattori / limiti: {positives}\n"
-            f"Fiducia: BASSA fino a backtest/calibrazione e conferma clinica/sportiva.\n"
-            f"Provider dei dati (non link alla singola partita): {url} e AllSports (https://allsportsapi.com/)")
+def cmd_validate(cfg: Config, args) -> None:
+    db = Storage(cfg.db_path)
+    examples = db.history()
+    if not examples:
+        print("Storico vuoto: importa prima i dati (import-history / import-live).")
+        return
+    results = validate(examples, args.cutoff, cfg.threshold, bandwidth=cfg.model_bandwidth,
+                       min_sample=cfg.model_min_sample, z=cfg.model_z, min_alerts=cfg.validation_min_alerts,
+                       max_gap=cfg.validation_max_gap)
+    db.save_validations(results, datetime.now(timezone.utc))
+    print(f"Validazione fuori tempo: addestramento < {args.cutoff} <= test. Soglia {cfg.threshold:.0%} "
+          f"(alert se limite inferiore > soglia).")
+    for v in results:
+        print(f"\n[{'PROMOSSO' if v.passed else 'NON promosso'}] {v.state} / {v.outcome}: {v.note}")
+        print(f"  test {v.n_test}, coperti {v.covered}, Brier {v.brier if v.brier is None else round(v.brier, 4)}, "
+              f"log loss {v.logloss if v.logloss is None else round(v.logloss, 4)}")
+        print(f"  alert simulati {v.alerts}, riusciti {v.hits}, predetto medio {_pct(v.mean_predicted)}, "
+              f"limite inf. osservato {_pct(v.alert_lower)}")
+        for label, n, pred, obs in v.buckets:
+            print(f"    fascia {label:>9}: n={n:5d} predetto {pred:6.1%} osservato {obs:6.1%}")
 
 
-def candidates(matches: list[Match], markets: list[Market], storage: Storage, cfg: Config,
-               now: datetime) -> list[Signal]:
-    found: list[Signal] = []
-    for match in matches:
-        if storage.already_alerted(f"{match.sport}:{match.event_id}"):
-            continue
-        related = [market for market in markets if matches_market(match, market)]
-        # Nomi ambigui = nessun alert. Un mercato non può appartenere a due eventi live.
-        related = [market for market in related if sum(matches_market(other, market) for other in matches) == 1]
-        if len(related) != 1:
-            continue
-        market = related[0]
-        pre = storage.pre(market.event_id)
-        prematch_prices = storage.pre_prices(market.event_id)
-        if match.sport == "tennis":
-            # La quota iniziale osservata deve essere <= 1.20, con evidenza pre-gara archiviata.
-            target = map_outcome(match, market, match.behind)
-            if not (1 < prematch_prices.get(target, float("inf")) <= cfg.max_tennis_prematch_odds):
-                continue
-        ctx = trusted_context(cfg.context_file, match, now)
-        signals = estimate(match, market, pre, threshold=cfg.threshold,
-                           min_pre=cfg.min_pre_probability, max_spread=cfg.max_spread, context=ctx)
-        if signals:
-            # Preferisce vittoria se >70%, altrimenti per il calcio almeno pareggio.
-            chosen = next((s for s in signals if s.outcome == "vittoria"), signals[0])
-            found.append(replace(chosen, pre_quote=prematch_prices.get(map_outcome(match, market, match.behind))))
-    return found
+def cmd_report(cfg: Config) -> None:
+    db = Storage(cfg.db_path)
+    rows = db.resolved_evaluations()
+    if not rows:
+        print("Nessuna valutazione con esito finale ancora disponibile.")
+        return
+    groups: dict[tuple[str, str, str], list[dict]] = {}
+    for r in rows:
+        groups.setdefault((r["decision"], r["state"], r["outcome"]), []).append(r)
+    print("decisione | stato | esito | n | riuscite | prob. modello media | prob. mercato live media")
+    for (decision, state, outcome), items in sorted(groups.items()):
+        hits = [int(r["winner"] == r["target_side"] or (outcome == "not_lose" and r["winner"] == "draw"))
+                for r in items]
+        mp = [r["model_point"] for r in items if r["model_point"] is not None]
+        lp = [r["live_prob"] for r in items if r["live_prob"] is not None]
+        lo, hi = wilson(sum(hits), len(hits), 1.96)
+        print(f"{decision:7} | {state:28} | {outcome:8} | {len(items):4d} | {sum(hits) / len(hits):6.1%} "
+              f"[{lo:.0%}-{hi:.0%}] | {_pct(sum(mp) / len(mp) if mp else None)} | {_pct(sum(lp) / len(lp) if lp else None)}")
 
 
-class Monitor:
-    def __init__(self, cfg: Config):
-        cfg.validate(live=True)
-        self.cfg = cfg
-        self.db = Storage(cfg.db_path)
-        self.all = AllSports(cfg.allsports_key)
-        self.odds = TheOddsAPI(cfg.odds_key, cfg.regions)
-        self.telegram = Telegram(cfg.telegram_token, cfg.telegram_chat) if not cfg.dry_run else None
-        self.stopped = False
-
-    def stop(self, *_):
-        self.stopped = True
-
-    def tick(self):
-        now = datetime.now(timezone.utc)
-        today = now.astimezone(ROME).strftime("%Y-%m-%d")
-        matches: list[Match] = []
-        markets: list[Market] = []
-        try:
-            keys = self.odds.active_keys(self.cfg.watch_keys, max_auto_tennis=self.cfg.auto_tennis_limit)
-        except FeedError as exc:
-            LOG.warning("Impossibile ottenere discipline disponibili: %s", exc)
-            keys = []
-        jobs = {}
-        with ThreadPoolExecutor(max_workers=7) as pool:
-            for sport in SPORTS:
-                jobs[pool.submit(self.all.live, sport)] = ("score", sport)
-            for key in keys:
-                if not self.db.available_budget(today, self.cfg.max_requests_day):
-                    LOG.warning("Limite richieste quote raggiunto: controlli quote sospesi fino a domani")
-                    break
-                # Prenota prima di chiamare il provider: evita di superare il budget al riavvio.
-                self.db.consume(today)
-                jobs[pool.submit(self.odds.odds, key)] = ("odds", key)
-            for result in as_completed(jobs):
-                kind, name = jobs[result]
-                try:
-                    records = result.result()
-                except (FeedError, ValueError, OSError) as exc:
-                    LOG.warning("Feed %s/%s indisponibile: %s", kind, name, exc)
-                    continue
-                if kind == "score":
-                    matches += [parsed for raw in records if (parsed := parse_match(name, raw))]
-                else:
-                    sport = sport_for_key(name)
-                    if not sport:
-                        continue
-                    for raw in records:
-                        # Prepartita: raccoglie prezzi con timestamp fino a 24h, mai dopo lo start.
-                        prematch = parse_market(raw, sport, now, 86400, self.cfg.min_books)
-                        if prematch and prematch.starts_at > now + timedelta(minutes=2):
-                            self.db.store_pre(prematch.event_id, prematch.prob, now, prematch.reference_odds)
-                        live = parse_market(raw, sport, now, self.cfg.max_odds_age, self.cfg.min_books)
-                        if live and live.starts_at <= now and live.starts_at > now - timedelta(hours=12):
-                            markets.append(live)
-        signals = candidates(matches, markets, self.db, self.cfg, now)
-        LOG.info("Controllati live: %s partite in svantaggio, %s mercati freschi, %s candidati > %.0f%%",
-                 len(matches), len(markets), len(signals), self.cfg.threshold * 100)
-        for s in signals:
-            alert_id = f"{s.match.sport}:{s.match.event_id}"
-            message = format_alert(s, now, self.cfg.dry_run)
-            if self.cfg.dry_run:
-                LOG.info("CANDIDATO, nessun invio:\n%s", message)
-            else:
-                try:
-                    assert self.telegram
-                    self.telegram.send(message)
-                except (FeedError, ValueError, OSError) as exc:
-                    LOG.error("Invio Telegram non riuscito: %s", exc)
-                    continue
-                self.db.sent(alert_id, s.outcome, now)
-                LOG.info("Segnalazione inviata: %s", alert_id)
-
-    def run(self):
-        signal.signal(signal.SIGTERM, self.stop)
-        signal.signal(signal.SIGINT, self.stop)
-        LOG.info("Avvio monitor: intervallo %d s, DRY_RUN=%s", self.cfg.poll_seconds, self.cfg.dry_run)
-        while not self.stopped:
-            started = time.monotonic()
-            try:
-                self.tick()
-            except Exception:
-                # L'errore resta diagnosticabile, il processo rimane disponibile.
-                LOG.exception("Ciclo interrotto da errore inatteso")
-            remaining = max(0, self.cfg.poll_seconds - (time.monotonic() - started))
-            end = time.monotonic() + remaining
-            while not self.stopped and time.monotonic() < end:
-                time.sleep(min(1, end - time.monotonic()))
+def cmd_status(cfg: Config) -> None:
+    db = Storage(cfg.db_path)
+    today = datetime.now(timezone.utc).astimezone(ROME).strftime("%Y-%m-%d")
+    print(f"Crediti The Odds API consumati oggi: {db.used_today(today)}/{cfg.max_requests_day}; "
+          f"residui dichiarati dal provider: {db.get_kv('odds_api_remaining') or 'n/d'}")
+    sizes: dict[str, int] = {}
+    for e in db.history():
+        sizes[e.state] = sizes.get(e.state, 0) + 1
+    print("Storico per stato:", ", ".join(f"{k}={v}" for k, v in sorted(sizes.items())) or "vuoto")
+    print("Stati/esiti promossi:", ", ".join(f"{s}/{o}" for s, o in sorted(db.approved())) or "nessuno (=> nessun alert)")
+    counts = db.conn.execute("SELECT decision, COUNT(*) FROM evaluations GROUP BY decision").fetchall()
+    print("Valutazioni archiviate:", dict(counts) or "nessuna")
 
 
-def demo():
-    """Esempio isolato: dati fittizi, nessuna rete, nessun messaggio Telegram."""
-    from tempfile import TemporaryDirectory
-
-    now = datetime.now(timezone.utc)
-    record = {"event_live": "1", "event_key": "demo-match", "event_first_player": "C. Cretu",
-              "event_second_player": "L. Djere", "event_status": "Set 2",
-              "scores": [{"score_first": "7", "score_second": "5", "score_set": "1"}],
-              "event_game_result": "2 - 1", "league_name": "Challenger (esempio simulato)"}
-    bookmakers = []
-    for n in range(4):
-        bookmakers.append({"key": f"book{n}", "markets": [{"key": "h2h",
-                            "last_update": now.isoformat(), "outcomes": [
-                                {"name": "Cezar Cretu", "price": 5.8 + 0.1 * n},
-                                {"name": "Laslo Djere", "price": 1.17 + 0.001 * n}]}]})
-    market_raw = {"id": "demo-odds", "home_team": "Cezar Cretu", "away_team": "Laslo Djere",
-                  "commence_time": (now - timedelta(minutes=50)).isoformat(), "bookmakers": bookmakers}
+def demo() -> None:
+    """Pipeline completa con dati SINTETICI: storico simulato, validazione, valutazione, messaggio."""
+    rng = random.Random(7)
+    start = date(2020, 1, 1)
+    examples = []
+    for i in range(6000):
+        pre = rng.uniform(0.62, 0.95)
+        win = int(rng.random() < 0.25 + 0.65 * pre)     # legge inventata, solo dimostrativa
+        examples.append(Example("tennis:atp:bo3:0-1", (start + timedelta(days=i // 3)).isoformat(), pre, win, win,
+                                "SINTETICO"))
+    cfg = Config.from_env()
+    results = validate(examples, "2024-01-01", cfg.threshold, bandwidth=cfg.model_bandwidth,
+                       min_sample=cfg.model_min_sample, z=cfg.model_z, min_alerts=cfg.validation_min_alerts,
+                       max_gap=cfg.validation_max_gap)
+    approved = {(v.state, v.outcome) for v in results if v.passed}
+    model = EmpiricalModel([e for e in examples if e.date < "2024-01-01"], bandwidth=cfg.model_bandwidth,
+                           min_sample=cfg.model_min_sample, z=cfg.model_z)
+    record = {"event_live": "1", "event_key": "demo-match", "event_first_player": "A. Rossi",
+              "event_second_player": "B. Bianchi", "event_status": "Set 2", "event_type_type": "Atp Singles",
+              "scores": [{"score_first": "7", "score_second": "5", "score_set": "1"},
+                         {"score_first": "1", "score_second": "1", "score_set": "2"}],
+              "event_game_result": "1 - 1", "league_name": "ATP Torneo di esempio (SIMULATO)"}
     match = parse_match("tennis", record)
-    market = parse_market(market_raw, "tennis", now, 180, 3)
-    assert match and market
-    with TemporaryDirectory() as temporary:
-        db = Storage(os.path.join(temporary, "demo.sqlite3"))
-        db.store_pre(market.event_id, {"first": 0.12, "second": 0.88}, now - timedelta(hours=1),
-                     {"first": 6.5, "second": 1.12})
-        cfg = Config.from_env()
-        picked = candidates([match], [market], db, cfg, now)
-        print("DEMO: dataset sintetico, non sono dati reali. Nessuna connessione o notifica.")
-        print(format_alert(picked[0], now, True) if picked else "Nessun candidato sopra soglia")
+    assert match
+    pre = Quote({"first": 0.12, "second": 0.88}, {"first": 7.0, "second": 1.12}, 5, 0.02, "SINTETICO")
+    live = Quote({"first": 0.27, "second": 0.73}, {"first": 3.5, "second": 1.33}, 4, 0.02, "SINTETICO")
+    now = datetime.now(timezone.utc)
+    print("DEMO: storico, partita e quote SINTETICI e inventati. Nessuna connessione o notifica.")
+    for v in results:
+        print(f"Validazione {v.state}/{v.outcome}: {v.note} (alert simulati {v.alerts}, riusciti {v.hits})")
+    for ev in evaluate(match, pre, live, model, approved, cfg):
+        print(f"Decisione: {ev.decision} — {ev.reason}")
+        if ev.decision == "alert":
+            print(format_alert(ev, now, True))
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Odds Intelligence: monitor sport in tempo quasi reale")
-    parser.add_argument("command", choices=["run", "demo"], nargs="?", default="run")
-    args = parser.parse_args()
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Odds Intelligence: monitor rimonte con modello calibrato")
+    sub = parser.add_subparsers(dest="command")
+    sub.add_parser("run")
+    sub.add_parser("demo")
+    imp = sub.add_parser("import-history")
+    imp.add_argument("--sport", choices=["football", "tennis"], required=True)
+    imp.add_argument("--tier", choices=["atp", "wta", "challenger", "itf"])
+    imp.add_argument("files", nargs="+")
+    sub.add_parser("import-live")
+    val = sub.add_parser("validate")
+    val.add_argument("--cutoff", required=True, help="data AAAA-MM-GG: prima = addestramento, dopo = test")
+    sub.add_parser("report")
+    sub.add_parser("status")
+    args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
-    if args.command == "demo":
+    cfg = Config.from_env()
+    command = args.command or "run"
+    if command == "demo":
         demo()
+    elif command == "import-history":
+        cmd_import_history(cfg, args)
+    elif command == "import-live":
+        cmd_import_live(cfg)
+    elif command == "validate":
+        cmd_validate(cfg, args)
+    elif command == "report":
+        cmd_report(cfg)
+    elif command == "status":
+        cmd_status(cfg)
     else:
-        Monitor(Config.from_env()).run()
+        Monitor(cfg).run()
 
 
 if __name__ == "__main__":
