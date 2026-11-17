@@ -5,7 +5,7 @@ Servizio Python 3.12 / Docker che ogni 60 secondi osserva tennis (ATP/WTA/Challe
 **misurata su uno storico e validata fuori campione**, ha un limite inferiore di confidenza strettamente
 superiore al 70%.
 
-> **Stato (v0.2):** codice e 46 test offline funzionanti. **Non è installato su alcun server e non è
+> **Stato (v0.2):** codice e 50 test offline funzionanti. **Non è installato su alcun server e non è
 > collegato a chiavi reali.** Senza uno storico importato e validato, il servizio **non emette alcun alert**
 > (fail closed): raccoglie e archivia dati. `DRY_RUN=true` di default.
 
@@ -39,6 +39,18 @@ punteggi live, quote pre-partita di un bookmaker (DraftKings, calcio e basket) e
   - i Challenger/ITF.
 
   Calcio (all'intervallo, con storico importato) funziona. Il basket resta senza storico.
+- **Betfair Exchange (gratuito, consigliato):** con un conto betfair.it e la chiave applicazione "delayed"
+  (developer.betfair.com) il servizio ottiene quote **pre-partita e live** di tennis (anche Challenger),
+  calcio e basket. Questo sblocca il tennis (quota pre ≤ 1,20) e la media storico/mercato. Imposta
+  `BETFAIR_APP_KEY`, `BETFAIR_USERNAME`, `BETFAIR_PASSWORD` e `REQUIRE_LIVE_MARKET=true`, poi verifica con
+  `python -m monitor test-betfair`. Note:
+  - i prezzi della chiave gratuita sono ritardati;
+  - la probabilità è il punto medio back/lay, usato solo se il mercato è liquido (`BETFAIR_MIN_MATCHED`) e
+    la forbice stretta;
+  - il server deve stare in un paese da cui Betfair accetta connessioni: dall'ambiente di sviluppo (cloud
+    estero) le API rispondevano 403;
+  - dopo un login fallito il servizio non riprova per 30 minuti, per non bloccare il conto;
+  - il programma legge solo le quote e **non piazza scommesse**.
 - Per riattivare le fonti a pagamento: `SCORES_PROVIDER=allsports` con `ALLSPORTS_API_KEY`, e/o
   `ODDS_API_KEY` con `REQUIRE_LIVE_MARKET=true`.
 
@@ -137,6 +149,7 @@ Passa a `DRY_RUN=false` solo dopo `validate` con stati promossi e una revisione 
 | `python -m monitor report` | calibrazione osservata di alert/shadow archiviati |
 | `python -m monitor status` | crediti, storico per stato, stati promossi |
 | `python -m monitor test-telegram` | invia un messaggio di prova al bot |
+| `python -m monitor test-betfair` | login Betfair e conteggio mercati (solo lettura) |
 
 Test: `python3 -m unittest discover -s tests -v`
 

@@ -9,6 +9,7 @@
   python -m monitor report                   # calibrazione delle valutazioni archiviate
   python -m monitor status
   python -m monitor test-telegram            # invia un messaggio di prova al bot
+  python -m monitor test-betfair             # login Betfair e conteggio mercati (nessuna scommessa)
 """
 from __future__ import annotations
 
@@ -124,6 +125,29 @@ def cmd_test_telegram(cfg: Config) -> None:
     print("Messaggio di prova inviato: controlla Telegram.")
 
 
+def cmd_test_betfair(cfg: Config) -> None:
+    from .betfair import Betfair
+    from .feeds import FeedError
+    if not (cfg.betfair_app_key and cfg.betfair_username and cfg.betfair_password):
+        print("Mancano BETFAIR_APP_KEY, BETFAIR_USERNAME o BETFAIR_PASSWORD nel file .env")
+        sys.exit(1)
+    bf = Betfair(cfg.betfair_app_key, cfg.betfair_username, cfg.betfair_password, cfg.betfair_jurisdiction)
+    now = datetime.now(timezone.utc)
+    try:
+        bf.login()
+        for sport in ("tennis", "football", "basketball"):
+            markets = bf.catalogue(sport, now - timedelta(hours=3), now + timedelta(hours=24))
+            print(f"{sport}: {len(markets)} mercati Esito finale nelle prossime 24 ore")
+            if markets:
+                book = bf.books([markets[0].market_id]).get(markets[0].market_id, {})
+                print(f"  esempio: {markets[0].event} — stato {book.get('status')}, "
+                      f"dati ritardati: {book.get('isMarketDataDelayed')}")
+    except FeedError as exc:
+        print(f"Betfair non raggiungibile: {exc}")
+        sys.exit(1)
+    print("Betfair collegato correttamente (solo lettura quote, nessuna scommessa).")
+
+
 def demo() -> None:
     """Pipeline completa con dati SINTETICI: storico simulato, validazione, valutazione, messaggio."""
     rng = random.Random(7)
@@ -175,6 +199,7 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("report")
     sub.add_parser("status")
     sub.add_parser("test-telegram")
+    sub.add_parser("test-betfair")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     cfg = Config.from_env()
@@ -193,6 +218,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd_status(cfg)
     elif command == "test-telegram":
         cmd_test_telegram(cfg)
+    elif command == "test-betfair":
+        cmd_test_betfair(cfg)
     else:
         Monitor(cfg).run()
 

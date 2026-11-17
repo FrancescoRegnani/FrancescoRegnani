@@ -16,9 +16,10 @@ Progetto commissionato da un utente italiano (Karim) che vuole un servizio auton
 
 ## Stato effettivo del codice (v0.2)
 
-**Testato offline (46 test, Python 3.12 e 3.13); NON distribuito su server, NON collegato a chiavi reali, build Docker non ancora provata.** `DRY_RUN=true` di default. Senza storico importato e validato non parte **nessun alert** (fail closed).
+**Testato offline (50 test, Python 3.12 e 3.13); NON distribuito su server, NON collegato a chiavi reali, build Docker non ancora provata.** `DRY_RUN=true` di default. Senza storico importato e validato non parte **nessun alert** (fail closed).
 
 - `monitor/espn.py`: fonte GRATUITA predefinita (`SCORES_PROVIDER=espn`): scoreboard pubblici ESPN (non ufficiali) convertiti nel formato AllSports; accesso educato (fila, pause, cache, stop su 403/429), niente elusione. Verificato dal vivo il 17/11/2026: 47 quote pre e una partita WTA live letta. Niente quote live, niente quote tennis, niente Challenger.
+- `monitor/betfair.py`: Betfair Exchange API ufficiale (chiave "delayed" gratuita): login interattivo, listMarketCatalogue/listMarketBook, probabilità dal punto medio back/lay con filtri di liquidità e forbice. Priorità sulle altre fonti quote. NON provato con un conto reale: dall'ambiente cloud di sviluppo api/identitysso .it e .com rispondevano 403 (probabile blocco geografico): il VPS deve stare in Europa/Italia. Comando `test-betfair`.
 - `monitor/engine.py`: parsing livescore AllSports (set/game, minuto/intervallo, punteggio), mercati The Odds API, quote pre AllSports (`Odds`), esiti finali (`Fixtures`), de-vig, abbinamento nomi.
 - `monitor/model.py`: modello empirico per stato di gioco + prob. pre-partita (finestra ±bandwidth), limite inferiore di Wilson, validazione fuori tempo (Brier, log loss, fasce, promozione).
 - `monitor/history.py`: import di CSV locali (football-data / tennis-data). Nessun download automatico.
@@ -57,7 +58,7 @@ docker compose up -d --build
 docker compose logs -f --tail=80
 ```
 
-Profilo gratuito: servono solo `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID` (l'utente vuole solo fonti gratuite). `ALLSPORTS_API_KEY` e `ODDS_API_KEY` restano facoltative. Non chiedere all'utente di incollare segreti in chat; guidalo nell'inserimento sicuro sul server. Non passare da `DRY_RUN=true` a `false` senza dati validati e decisione esplicita dell'utente.
+Profilo gratuito: servono `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` e, per tennis e quote live, il conto Betfair (`BETFAIR_APP_KEY/USERNAME/PASSWORD`) (l'utente vuole solo fonti gratuite). `ALLSPORTS_API_KEY` e `ODDS_API_KEY` restano facoltative. Non chiedere all'utente di incollare segreti in chat; guidalo nell'inserimento sicuro sul server. Non passare da `DRY_RUN=true` a `false` senza dati validati e decisione esplicita dell'utente.
 
 ## Roadmap residua
 

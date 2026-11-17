@@ -15,6 +15,7 @@ from .config import Config
 from .decision import Evaluation, Quote, evaluate, match_state
 from .engine import Market, Match, final_winner, map_outcome, name_match, parse_allsports_odds, parse_market, \
     parse_match, parse_timestamp
+from .betfair import Betfair, BfMarket, book_probabilities
 from .espn import ESPNFeed
 from .feeds import AllSports, FeedError, Telegram, TheOddsAPI
 from .model import EmpiricalModel
@@ -94,14 +95,15 @@ def format_alert(ev: Evaluation, now: datetime, dry_run: bool, scores_source: st
          f"  = solo storico {est.point:.1%} (campione {est.n}, stato {ev.state})" if est else ""),
         f"Quota live mediana: {live_price} | quota equa modello: {fair} | margine atteso: {edge}",
         "Evidenze: " + "; ".join(ev.evidence),
-        f"Fonti dati: {scores_source} (punteggi, quote pre)"
-        + (", The Odds API (quote live)" if ev.live_prob is not None else "") + ". Non è una garanzia di esito.",
+        f"Fonti dati: {scores_source} (punteggi), quote pre {ev.pre_source or 'n/d'}"
+        + (f", quote live {ev.live_source}" if ev.live_prob is not None else "") + ". Non è una garanzia di esito.",
     ]
     return "\n".join(lines)
 
 
 class Monitor:
-    def __init__(self, cfg: Config, *, storage: Storage | None = None, allsports=None, odds=None, telegram=None):
+    def __init__(self, cfg: Config, *, storage: Storage | None = None, allsports=None, odds=None, telegram=None,
+                 betfair=None):
         cfg.validate(live=storage is None)
         self.cfg = cfg
         self.db = storage or Storage(cfg.db_path)
@@ -112,6 +114,13 @@ class Monitor:
         else:
             self.all = AllSports(cfg.allsports_key)
         self.source_label = "ESPN" if cfg.scores_provider == "espn" else "AllSports"
+        self.betfair = betfair if betfair is not None else (
+            Betfair(cfg.betfair_app_key, cfg.betfair_username, cfg.betfair_password, cfg.betfair_jurisdiction)
+            if cfg.betfair_app_key else None)
+        self.bf_markets: dict[str, BfMarket] = {}
+        self.bf_catalogue_at: dict[str, datetime] = {}
+        self.bf_pre_at = datetime.min.replace(tzinfo=timezone.utc)
+        self.bf_live: dict[str, tuple[dict[str, float], dict[str, float]]] = {}
         self.odds = odds if odds is not None else (TheOddsAPI(cfg.odds_key, cfg.regions) if cfg.odds_key else None)
         self.telegram = telegram or (Telegram(cfg.telegram_token, cfg.telegram_chat) if not cfg.dry_run else None)
         self.stopped = False
@@ -289,9 +298,117 @@ class Monitor:
             self.db.set_kv("odds_api_remaining", str(self.odds.remaining))
         return live_markets
 
+    # --- Betfair ---------------------------------------------------------------------------------
+    def bf_market_for(self, match: Match, now: datetime) -> BfMarket | None:
+        """Mercato MATCH_ODDS Betfair abbinato in modo univoco per nomi (ambiguità => None)."""
+        t = match.sport == "tennis"
+        found = []
+        for mk in self.bf_markets.values():
+            if mk.sport != match.sport or not (now - LIVE_WINDOW[match.sport] < mk.start <= now + timedelta(minutes=5)):
+                continue
+            sides = mk.sides
+            if "first" not in sides or "second" not in sides:
+                continue
+            a, b = sides["first"][1], sides["second"][1]
+            if ((name_match(match.first, a, t) and name_match(match.second, b, t)) or
+                    (name_match(match.first, b, t) and name_match(match.second, a, t))):
+                found.append(mk)
+        return found[0] if len(found) == 1 else None
+
+    def refresh_betfair(self, trailing: list[Match], now: datetime):
+        assert self.betfair is not None
+        for sport in SPORTS:
+            last = self.bf_catalogue_at.get(sport)
+            if last and (now - last).total_seconds() < self.cfg.events_refresh:
+                continue
+            self.bf_catalogue_at[sport] = now
+            try:
+                markets = self.betfair.catalogue(sport, now - LIVE_WINDOW[sport], now + timedelta(hours=24))
+            except FeedError as exc:
+                LOG.warning("Betfair catalogo %s: %s", sport, exc)
+                continue
+            self.bf_markets = {k: v for k, v in self.bf_markets.items() if v.sport != sport}
+            self.bf_markets.update({m.market_id: m for m in markets})
+        # Pre-partita: al massimo ogni PREMATCH_REFRESH_SECONDS, solo mercati non ancora iniziati.
+        if (now - self.bf_pre_at).total_seconds() >= self.cfg.prematch_refresh:
+            self.bf_pre_at = now
+            upcoming = [m for m in self.bf_markets.values() if now + timedelta(minutes=2) < m.start <= now + timedelta(hours=24)]
+            try:
+                books = self.betfair.books([m.market_id for m in upcoming])
+            except FeedError as exc:
+                LOG.warning("Betfair quote pre: %s", exc)
+                books = {}
+            stored = 0
+            for m in upcoming:
+                book = books.get(m.market_id)
+                if not book or book.get("inplay"):
+                    continue
+                parsed = book_probabilities(m, book, max_rel_spread=self.cfg.betfair_max_rel_spread,
+                                            min_matched=self.cfg.betfair_min_matched)
+                if parsed:
+                    prob, backs = parsed
+                    self.db.store_pre(f"bf:{m.market_id}", {**prob, "_books": 1, "_spread": 0.0}, now, backs,
+                                      source="betfair")
+                    self.db.snapshot_odds(m.market_id, "betfair", now, m.start, "pre", m.sides["first"][1],
+                                          m.sides["second"][1], prob, backs, 1, 0.0)
+                    stored += 1
+            LOG.info("Betfair: %d mercati in catalogo, %d quote pre aggiornate", len(self.bf_markets), stored)
+        # Live: solo partite in svantaggio con favorito pre-partita e stato modellabile.
+        self.bf_live = {}
+        wanted: dict[str, BfMarket] = {}
+        for m in trailing:
+            mk = self.bf_market_for(m, now)
+            if mk and mk.start <= now and (self.cfg.collect_all_live_odds or self._bf_worth(m, mk)):
+                wanted[mk.market_id] = mk
+        if not wanted:
+            return
+        try:
+            books = self.betfair.books(list(wanted))
+        except FeedError as exc:
+            LOG.warning("Betfair quote live: %s", exc)
+            return
+        for mid, mk in wanted.items():
+            book = books.get(mid)
+            if not book:
+                continue
+            parsed = book_probabilities(mk, book, max_rel_spread=self.cfg.betfair_max_rel_spread,
+                                        min_matched=self.cfg.betfair_min_matched)
+            if parsed:
+                self.bf_live[mid] = parsed
+                self.db.snapshot_odds(mid, "betfair", now, mk.start, "live", mk.sides["first"][1],
+                                      mk.sides["second"][1], parsed[0], parsed[1], 1, 0.0)
+
+    def _bf_worth(self, m: Match, mk: BfMarket) -> bool:
+        stored, _, _ = self._load_pre(f"bf:{mk.market_id}")
+        pre = orient(m, mk.sides["first"][1], stored, {}, 0, 0, "") if stored else None
+        if pre is None:
+            stored, _, _ = self._load_pre(f"as:{m.sport}:{m.event_id}")
+            pre = Quote(stored, {}) if stored else None
+        if not pre or pre.prob.get(m.behind or "", 0) < self.cfg.min_pre_probability:
+            return False
+        return match_state(m, self.cfg)[1] is None
+
+    def betfair_quotes(self, match: Match, now: datetime) -> tuple[Quote | None, Quote | None]:
+        mk = self.bf_market_for(match, now)
+        if not mk:
+            return None, None
+        first_name = mk.sides["first"][1]
+        pre = live = None
+        stored, _, _ = self._load_pre(f"bf:{mk.market_id}")
+        if stored:
+            pre = orient(match, first_name, stored, self.db.pre_prices(f"bf:{mk.market_id}"), 1, 0.0,
+                         "Betfair Exchange")
+        if mk.market_id in self.bf_live:
+            prob, backs = self.bf_live[mk.market_id]
+            live = orient(match, first_name, prob, backs, 1, 0.0, "Betfair Exchange (prezzi ritardati)")
+        return pre, live
+
     # --- valutazione ------------------------------------------------------------------------
     def quotes_for(self, match: Match, live_markets: dict[str, Market], now: datetime) -> tuple[Quote | None, Quote | None]:
-        """Quota pre (The Odds API se abbinata in modo univoco, altrimenti AllSports per event_key) e live."""
+        """Quote pre e live. Priorità: Betfair Exchange (margine minimo), The Odds API, poi la fonte punteggi."""
+        bf_pre = bf_live = None
+        if self.betfair is not None:
+            bf_pre, bf_live = self.betfair_quotes(match, now)
         candidates = []
         for key, (_, events) in self.events.items():
             if sport_for_key(key) != match.sport:
@@ -312,6 +429,7 @@ class Monitor:
             if market and market.spread <= self.cfg.max_spread:
                 live = orient(match, market.first, market.prob, market.reference_odds, market.count, market.spread,
                               "The Odds API")
+        pre, live = bf_pre or pre, bf_live or live
         if pre is None:
             stored, books, spread = self._load_pre(f"as:{match.sport}:{match.event_id}")
             if stored:
@@ -404,6 +522,11 @@ class Monitor:
                 keys = []
             self.refresh_events(keys, now)
             live_markets = self.fetch_odds(self.odds_plan(keys, trailing, now), now)
+        if self.betfair is not None:
+            try:
+                self.refresh_betfair(trailing, now)
+            except FeedError as exc:
+                LOG.warning("Betfair non disponibile: %s", exc)
         alerts = self.evaluate_all(trailing, live_markets, now)
         self.dispatch(alerts, now)
         self.resolve_results(now)

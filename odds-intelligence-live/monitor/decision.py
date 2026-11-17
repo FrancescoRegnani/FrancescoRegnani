@@ -54,6 +54,7 @@ class Evaluation:
     evidence: tuple[str, ...] = field(default_factory=tuple)
     final: float | None = None        # media pesata storico/mercato live
     final_lower: float | None = None  # stessa media sul limite inferiore dello storico
+    live_source: str = ""
 
     @property
     def label(self) -> str:
@@ -144,7 +145,8 @@ def evaluate(match: Match, pre: Quote | None, live: Quote | None, model: Empiric
 
         def result(decision: str, reason: str) -> Evaluation:
             return Evaluation(match, outcome, state, target, decision, reason, pre_prob, pre_price, live_prob,
-                              live_price, est, pre.source, tuple(evidence), final, final_lower)
+                              live_price, est, pre.source, tuple(evidence), final, final_lower,
+                              live.source if live else "")
 
         if match.sport == "tennis" and not (pre_price and 1 < pre_price <= cfg.max_tennis_prematch_odds):
             out.append(result("shadow", f"quota pre-partita {pre_price or 'n/d'} oltre {cfg.max_tennis_prematch_odds}"))

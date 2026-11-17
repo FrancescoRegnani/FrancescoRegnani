@@ -509,3 +509,75 @@ class ESPNTests(unittest.TestCase):
         free.validate(live=True)
         with self.assertRaises(ValueError):
             cfg(scores_provider="espn", odds_key="", require_live_market=True).validate(live=True)
+
+
+def bf_book(market_id, back_first=1.30, back_second=4.0, status="OPEN", matched=5000.0, inplay=True, spread=0.02):
+    def runner(sel, back):
+        return {"selectionId": sel, "status": "ACTIVE",
+                "ex": {"availableToBack": [{"price": back, "size": 100}],
+                       "availableToLay": [{"price": round(back * (1 + spread), 2), "size": 100}]}}
+    return {"marketId": market_id, "status": status, "inplay": inplay, "totalMatched": matched,
+            "runners": [runner(1, back_first), runner(2, back_second)]}
+
+
+class FakeBetfair:
+    def __init__(self, start, live_back=1.40):
+        from monitor.betfair import BfMarket
+        self.market = BfMarket("1.23", "tennis", "Djere v Cretu", "ATP Vienna", start,
+                               ((1, "Laslo Djere"), (2, "Cezar Cretu")))
+        self.live_back = live_back
+        self.book_calls = []
+
+    def catalogue(self, sport, start, end):
+        return [self.market] if sport == "tennis" else []
+
+    def books(self, ids):
+        self.book_calls.append(list(ids))
+        return {i: bf_book(i, back_first=self.live_back, back_second=3.4) for i in ids}
+
+
+class BetfairTests(unittest.TestCase):
+    def test_book_probabilities_filters(self):
+        from monitor.betfair import BfMarket, book_probabilities
+        mk = BfMarket("1", "tennis", "A v B", "", NOW, ((1, "A"), (2, "B")))
+        prob, backs = book_probabilities(mk, bf_book("1"), max_rel_spread=0.1, min_matched=200)
+        self.assertAlmostEqual(sum(prob.values()), 1.0)
+        self.assertGreater(prob["first"], 0.7)
+        self.assertEqual(backs["first"], 1.30)
+        self.assertIsNone(book_probabilities(mk, bf_book("1", status="SUSPENDED"), max_rel_spread=.1, min_matched=200))
+        self.assertIsNone(book_probabilities(mk, bf_book("1", matched=50), max_rel_spread=.1, min_matched=200))
+        self.assertIsNone(book_probabilities(mk, bf_book("1", spread=0.3), max_rel_spread=.1, min_matched=200))
+
+    def test_football_sides_include_draw(self):
+        from monitor.betfair import BfMarket
+        mk = BfMarket("1", "football", "Como v Lecce", "", NOW, ((5, "Como"), (6, "Lecce"), (7, "The Draw")))
+        self.assertEqual({k: v[1] for k, v in mk.sides.items()}, {"first": "Como", "second": "Lecce", "draw": "The Draw"})
+
+    def test_login_pause_after_failure_makes_no_request(self):
+        import time as _t
+        from monitor.betfair import Betfair
+        from monitor.feeds import FeedError
+        bf = Betfair("k", "u", "p", "it")
+        bf.login_blocked_until = _t.time() + 60
+        with self.assertRaises(FeedError):
+            bf.login()
+
+    def test_monitor_uses_betfair_for_pre_and_live(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db = Storage(str(Path(folder) / "m.sqlite3"))
+            db.replace_history("synthetic", synthetic_history())
+            db.conn.execute("INSERT INTO validations VALUES (?,?,?,?,?)", (STATE, "win", NOW.isoformat(), 1, "{}"))
+            fake = FakeBetfair(NOW - timedelta(minutes=40))
+            # Quota pre-partita Betfair registrata prima dell'inizio (Djere favorito a 1.12).
+            db.store_pre("bf:1.23", {"first": .88, "second": .12, "_books": 1, "_spread": 0}, NOW - timedelta(hours=1),
+                         {"first": 1.12, "second": 8.0})
+            mon = Monitor(cfg(require_live_market=True, betfair_app_key="k", betfair_username="u",
+                              betfair_password="p"), storage=db, allsports=FakeAllSports(), odds=None,
+                          telegram=FakeTelegram(), betfair=fake)
+            mon.odds = None
+            mon.tick(NOW)
+            self.assertIn(["1.23"], fake.book_calls)   # quote live chieste solo per la partita in svantaggio
+            row = db.conn.execute("SELECT decision, live_prob, live_price FROM evaluations").fetchone()
+            self.assertEqual(row[0], "alert")
+            self.assertAlmostEqual(row[2], 1.40)
+            self.assertGreater(row[1], 0.65)

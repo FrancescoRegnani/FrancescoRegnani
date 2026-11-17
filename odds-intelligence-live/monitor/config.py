@@ -32,6 +32,12 @@ class Config:
     context_file: str
     # Pianificazione delle chiamate a pagamento
     scores_provider: str = "espn"
+    betfair_app_key: str = ""
+    betfair_username: str = ""
+    betfair_password: str = ""
+    betfair_jurisdiction: str = "it"
+    betfair_min_matched: float = 200.0
+    betfair_max_rel_spread: float = 0.10
     espn_leagues: tuple[tuple[str, tuple[str, ...]], ...] = ()
     espn_idle_refresh: int = 900
     prematch_min_books: int = 1
@@ -79,6 +85,12 @@ class Config:
             db_path=e("DB_PATH", "data/monitor.sqlite3"),
             context_file=e("CONTEXT_FILE", "context.json"),
             scores_provider=e("SCORES_PROVIDER", "espn").strip().lower(),
+            betfair_app_key=e("BETFAIR_APP_KEY", ""),
+            betfair_username=e("BETFAIR_USERNAME", ""),
+            betfair_password=e("BETFAIR_PASSWORD", ""),
+            betfair_jurisdiction=e("BETFAIR_JURISDICTION", "it").strip().lower(),
+            betfair_min_matched=float(e("BETFAIR_MIN_MATCHED", "200")),
+            betfair_max_rel_spread=float(e("BETFAIR_MAX_REL_SPREAD", "0.10")),
             espn_leagues=(("football", _list("ESPN_SOCCER_LEAGUES",
                                              "ita.1,ita.2,eng.1,esp.1,ger.1,fra.1,uefa.champions,uefa.europa")),
                           ("basketball", _list("ESPN_BASKETBALL_LEAGUES", "nba")),
@@ -129,8 +141,10 @@ class Config:
             raise ValueError("SCORES_PROVIDER deve essere espn (gratuito) o allsports")
         if live and self.scores_provider == "allsports" and not self.allsports_key:
             raise ValueError("SCORES_PROVIDER=allsports richiede ALLSPORTS_API_KEY")
-        if live and self.require_live_market and not self.odds_key:
-            raise ValueError("REQUIRE_LIVE_MARKET=true richiede ODDS_API_KEY "
-                             "(nel profilo gratuito imposta REQUIRE_LIVE_MARKET=false e REQUIRE_VALUE=false)")
+        if self.betfair_app_key and not (self.betfair_username and self.betfair_password):
+            raise ValueError("Con BETFAIR_APP_KEY servono anche BETFAIR_USERNAME e BETFAIR_PASSWORD")
+        if live and self.require_live_market and not (self.odds_key or self.betfair_app_key):
+            raise ValueError("REQUIRE_LIVE_MARKET=true richiede una fonte di quote live: BETFAIR_APP_KEY "
+                             "(gratuita) o ODDS_API_KEY; altrimenti imposta REQUIRE_LIVE_MARKET=false")
         if live and not self.dry_run and not (self.telegram_token and self.telegram_chat):
             raise ValueError("Imposta TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID")
