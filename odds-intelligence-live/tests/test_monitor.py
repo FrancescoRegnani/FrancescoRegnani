@@ -39,7 +39,7 @@ def odds_event(books, start=NOW - timedelta(minutes=35)):
 def tennis_record(first_score="7", second_score="5", games=("1", "1"), category="Atp Singles", status="Set 2"):
     return {"event_key": "live-1", "event_live": "1", "event_first_player": "C. Cretu",
             "event_second_player": "L. Djere", "event_status": status, "event_game_result": f"{games[0]} - {games[1]}",
-            "event_type_type": category, "league_name": "ATP Vienna",
+            "country_name": category, "league_name": "ATP Vienna",
             "scores": [{"score_set": "1", "score_first": first_score, "score_second": second_score},
                        {"score_set": "2", "score_first": games[0], "score_second": games[1]}]}
 
@@ -67,6 +67,12 @@ class ParsingTests(unittest.TestCase):
 
     def test_incomplete_set_no_deficit(self):
         self.assertIsNone(parse_match("tennis", tennis_record("4", "3")))
+
+    def test_category_from_documented_country_name(self):
+        rec = {**tennis_record(), "country_name": "Itf Women Singles"}
+        self.assertEqual(parse_match("tennis", rec).category, "Itf Women Singles")
+        legacy = {k: v for k, v in tennis_record().items() if k != "country_name"}
+        self.assertEqual(parse_match("tennis", {**legacy, "event_type_type": "Atp Singles"}).category, "Atp Singles")
 
     def test_doubles_rejected(self):
         rec = tennis_record()

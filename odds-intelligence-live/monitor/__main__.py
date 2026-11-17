@@ -142,7 +142,7 @@ def demo() -> None:
     model = EmpiricalModel([e for e in examples if e.date < "2024-01-01"], bandwidth=cfg.model_bandwidth,
                            min_sample=cfg.model_min_sample, z=cfg.model_z)
     record = {"event_live": "1", "event_key": "demo-match", "event_first_player": "A. Rossi",
-              "event_second_player": "B. Bianchi", "event_status": "Set 2", "event_type_type": "Atp Singles",
+              "event_second_player": "B. Bianchi", "event_status": "Set 2", "country_name": "Atp Singles",
               "scores": [{"score_first": "7", "score_second": "5", "score_set": "1"},
                          {"score_first": "1", "score_second": "1", "score_set": "2"}],
               "event_game_result": "1 - 1", "league_name": "ATP Torneo di esempio (SIMULATO)"}

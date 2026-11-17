@@ -121,7 +121,9 @@ def parse_match(sport: str, entry: dict[str, Any], require_behind: bool = True) 
     if sport == "tennis":
         first = str(entry.get("event_first_player", ""))
         second = str(entry.get("event_second_player", ""))
-        category = str(entry.get("event_type_type", ""))
+        # Nella documentazione AllSports il livello ("Atp Singles", "Challenger Men Singles",
+        # "Itf Women Singles") è in country_name; event_type_type come riserva.
+        category = str(entry.get("country_name") or entry.get("event_type_type") or "")
         match_set = re.fullmatch(r"Set\s+([1-5])", phase, re.IGNORECASE)
         if not match_set or is_doubles(first, second):
             return None
