@@ -31,6 +31,10 @@ class Config:
     db_path: str
     context_file: str
     # Pianificazione delle chiamate a pagamento
+    scores_provider: str = "espn"
+    espn_leagues: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    espn_idle_refresh: int = 900
+    prematch_min_books: int = 1
     prematch_refresh: int = 3600
     events_refresh: int = 900
     use_allsports_odds: bool = True
@@ -74,6 +78,13 @@ class Config:
             dry_run=boolean_env("DRY_RUN", True),
             db_path=e("DB_PATH", "data/monitor.sqlite3"),
             context_file=e("CONTEXT_FILE", "context.json"),
+            scores_provider=e("SCORES_PROVIDER", "espn").strip().lower(),
+            espn_leagues=(("football", _list("ESPN_SOCCER_LEAGUES",
+                                             "ita.1,ita.2,eng.1,esp.1,ger.1,fra.1,uefa.champions,uefa.europa")),
+                          ("basketball", _list("ESPN_BASKETBALL_LEAGUES", "nba")),
+                          ("tennis", _list("ESPN_TENNIS_LEAGUES", "atp,wta"))),
+            espn_idle_refresh=max(300, int(e("ESPN_IDLE_REFRESH_SECONDS", "900"))),
+            prematch_min_books=max(1, int(e("PREMATCH_MIN_BOOKMAKERS", "1"))),
             prematch_refresh=max(600, int(e("PREMATCH_REFRESH_SECONDS", "3600"))),
             events_refresh=max(120, int(e("ODDS_EVENTS_REFRESH_SECONDS", "900"))),
             use_allsports_odds=boolean_env("USE_ALLSPORTS_ODDS", True),
@@ -114,9 +125,12 @@ class Config:
             raise ValueError("MODEL_Z troppo basso: almeno 0.84 (80% unilaterale)")
         if not 0 <= self.football_ht_tolerance <= 10:
             raise ValueError("FOOTBALL_HT_TOLERANCE_MIN deve essere da 0 a 10")
-        if live and not self.allsports_key:
-            raise ValueError("Serve ALLSPORTS_API_KEY per punteggi e quote pre-partita")
+        if self.scores_provider not in {"espn", "allsports"}:
+            raise ValueError("SCORES_PROVIDER deve essere espn (gratuito) o allsports")
+        if live and self.scores_provider == "allsports" and not self.allsports_key:
+            raise ValueError("SCORES_PROVIDER=allsports richiede ALLSPORTS_API_KEY")
         if live and self.require_live_market and not self.odds_key:
-            raise ValueError("REQUIRE_LIVE_MARKET=true richiede ODDS_API_KEY")
+            raise ValueError("REQUIRE_LIVE_MARKET=true richiede ODDS_API_KEY "
+                             "(nel profilo gratuito imposta REQUIRE_LIVE_MARKET=false e REQUIRE_VALUE=false)")
         if live and not self.dry_run and not (self.telegram_token and self.telegram_chat):
             raise ValueError("Imposta TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID")

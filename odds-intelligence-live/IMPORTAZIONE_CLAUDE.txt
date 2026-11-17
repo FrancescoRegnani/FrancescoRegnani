@@ -42,7 +42,7 @@ una roadmap per arrivare a una versione realmente affidabile."
 
 STATO ALL'ESPORTAZIONE (aggiornato alla v0.2)
 ---------------------
-- Prototipo Python/Docker, 39 test offline superati (Python 3.12 e 3.13).
+- Prototipo Python/Docker, 46 test offline superati (Python 3.12 e 3.13).
 - Modello empirico calibrabile su storico + validazione fuori tempo: senza
   storico importato e validato NON parte alcun alert (fail closed).
 - Servizio NON installato sul server e NON attivo.

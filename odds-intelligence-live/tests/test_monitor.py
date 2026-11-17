@@ -425,3 +425,87 @@ class MonitorTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ESPNTests(unittest.TestCase):
+    def setUp(self):
+        from monitor.espn import ESPNFeed
+        self.feed = ESPNFeed({"football": ("ita.1",), "tennis": ("atp",), "basketball": ("nba",)})
+
+    @staticmethod
+    def soccer(state="in", name="STATUS_SECOND_HALF", clock="67'", period=2, scores=("0", "1"), odds=None):
+        return {"events": [{"id": "1", "name": "Como v Lecce", "competitions": [{
+            "id": "77", "date": "2026-11-17T14:00Z",
+            "status": {"period": period, "displayClock": clock, "type": {"state": state, "name": name,
+                                                                         "completed": state == "post"}},
+            "competitors": [{"homeAway": "home", "score": scores[0], "team": {"id": "1", "displayName": "Como"}},
+                            {"homeAway": "away", "score": scores[1], "team": {"id": "2", "displayName": "Lecce"}}],
+            "odds": odds or []}]}]}
+
+    def load(self, sport, league, board):
+        import time as _t
+        url = f"https://site.api.espn.com/apis/site/v2/sports/{ {'football': 'soccer'}.get(sport, sport)}/{league}/scoreboard"
+        self.feed.cache[url] = (_t.time(), board)
+
+    def test_american_to_decimal(self):
+        from monitor.espn import american_to_decimal
+        self.assertAlmostEqual(american_to_decimal("+650"), 7.5)
+        self.assertAlmostEqual(american_to_decimal("-320"), 1.3125)
+        self.assertIsNone(american_to_decimal("EVEN?"))
+
+    def test_football_live_minute_and_halftime(self):
+        self.load("football", "ita.1", self.soccer())
+        rec = self.feed.live("football")[0]
+        m = parse_match("football", rec)
+        self.assertEqual((m.minute, m.behind, m.first), (67, "first", "Como"))
+        self.load("football", "ita.1", self.soccer(name="STATUS_HALFTIME", clock="45'"))
+        self.assertTrue(parse_match("football", self.feed.live("football")[0]).halftime)
+        self.load("football", "ita.1", self.soccer(clock="45'+2'"))
+        self.assertEqual(parse_match("football", self.feed.live("football")[0]).minute, 47)
+
+    def test_football_prematch_odds_and_results(self):
+        odds = [{"provider": {"name": "DraftKings"}, "moneyline": {
+            "home": {"open": {"odds": "-300"}, "close": {"odds": "-360"}},
+            "away": {"close": {"odds": "+750"}}, "draw": {"close": {"odds": "+425"}}}}]
+        self.load("football", "ita.1", self.soccer(state="pre", name="STATUS_SCHEDULED", odds=odds))
+        parsed = parse_allsports_odds("football", self.feed.odds("football", None, None), 1, 0.1)
+        probs = parsed["ita.1-77"][0]
+        self.assertGreater(probs["first"], 0.7)
+        self.assertAlmostEqual(sum(probs.values()), 1.0)
+        self.load("football", "ita.1", self.soccer(state="post", name="STATUS_FULL_TIME", scores=("2", "1")))
+        recs = [r for r, _, _ in self.feed._records("football")]
+        self.assertEqual(final_winner("football", recs[0]), "first")
+        self.load("football", "ita.1", self.soccer(state="post", name="STATUS_FINAL_AET", scores=("2", "1")))
+        self.assertIsNone(final_winner("football", [r for r, _, _ in self.feed._records("football")][0]))
+
+    def test_tennis_singles_conversion(self):
+        board = {"events": [{"name": "Australian Open", "groupings": [{"competitions": [{
+            "id": "9", "type": {"slug": "mens-singles"},
+            "status": {"period": 2, "type": {"state": "in", "name": "STATUS_IN_PROGRESS"}},
+            "competitors": [
+                {"order": 1, "athlete": {"displayName": "Jannik Sinner"},
+                 "linescores": [{"value": 5}, {"value": 1}]},
+                {"order": 2, "athlete": {"displayName": "Rafael Jodar"},
+                 "linescores": [{"value": 7}, {"value": 1}]}]}, {
+            "id": "10", "type": {"slug": "mens-doubles"}, "status": {"type": {"state": "in"}},
+            "competitors": [{}, {}]}]}]}]}
+        self.load("tennis", "atp", board)
+        recs = self.feed.live("tennis")
+        self.assertEqual(len(recs), 1)   # doppio escluso
+        m = parse_match("tennis", recs[0])
+        self.assertEqual((m.behind, m.sets, m.games, m.category), ("first", (0, 1), (1, 1), "Atp Singles"))
+        self.assertEqual(tennis_best_of(m), 5)
+
+    def test_backoff_after_refusal_makes_no_request(self):
+        import time as _t
+        self.feed.blocked_until = _t.time() + 60
+        from monitor.feeds import FeedError
+        with self.assertRaises(FeedError):
+            self.feed._get("https://site.api.espn.com/never-called")
+
+    def test_free_profile_config_is_valid(self):
+        free = cfg(scores_provider="espn", allsports_key="", odds_key="", require_live_market=False,
+                   require_value=False)
+        free.validate(live=True)
+        with self.assertRaises(ValueError):
+            cfg(scores_provider="espn", odds_key="", require_live_market=True).validate(live=True)

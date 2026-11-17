@@ -5,7 +5,7 @@ Servizio Python 3.12 / Docker che ogni 60 secondi osserva tennis (ATP/WTA/Challe
 **misurata su uno storico e validata fuori campione**, ha un limite inferiore di confidenza strettamente
 superiore al 70%.
 
-> **Stato (v0.2):** codice e 39 test offline funzionanti. **Non è installato su alcun server e non è
+> **Stato (v0.2):** codice e 46 test offline funzionanti. **Non è installato su alcun server e non è
 > collegato a chiavi reali.** Senza uno storico importato e validato, il servizio **non emette alcun alert**
 > (fail closed): raccoglie e archivia dati. `DRY_RUN=true` di default.
 
@@ -20,6 +20,27 @@ superiore al 70%.
 | Budget esaurito in ~5 ore | Calendario eventi gratuito (`/events`); quote live solo per eventi in corso dove il favorito è sotto e lo stato è modellabile; quote pre al massimo una volta l'ora per campionato |
 | Challenger non coperti da The Odds API | Quote pre-partita AllSports (metodo `Odds`) indicizzate per `event_key`, anche Challenger/ITF. Alert Challenger solo con storico Challenger dedicato (`TENNIS_MODEL_TIERS`) |
 | Codice morto (`stale`), tornei tennis scelti in ordine alfabetico, retry assenti | Rimossi o corretti; retry con backoff su errori di rete e 429/5xx (mai su Telegram, per non duplicare) |
+
+## Profilo gratuito (predefinito)
+
+Senza alcun abbonamento il servizio usa gli **scoreboard pubblici di ESPN** (`SCORES_PROVIDER=espn`):
+punteggi live, quote pre-partita di un bookmaker (DraftKings, calcio e basket) e risultati finali.
+
+- **Accesso educato, nessuna elusione.** Richieste in fila con pause casuali e User-Agent onesto. Ogni
+  campionato è letto al massimo una volta al minuto, e solo ogni 15 minuti se non ha partite in corso o
+  imminenti. Su 403/429 la fonte si ferma per 30 minuti. Niente rotazione di IP né finti browser. SofaScore è
+  escluso perché blocca i programmi automatici.
+- **Gli endpoint ESPN non sono ufficiali**: possono cambiare senza preavviso. Se smettono di funzionare, il
+  log lo segnala e non partono alert.
+- **Cosa manca nel gratuito:**
+  - quote live, quindi `REQUIRE_LIVE_MARKET=false` e la probabilità finale è solo quella storica;
+  - quote tennis, quindi il criterio "quota pre ≤ 1,20" non è verificabile e **il tennis non genera alert**
+    senza una fonte quote;
+  - i Challenger/ITF.
+
+  Calcio (all'intervallo, con storico importato) funziona. Il basket resta senza storico.
+- Per riattivare le fonti a pagamento: `SCORES_PROVIDER=allsports` con `ALLSPORTS_API_KEY`, e/o
+  `ODDS_API_KEY` con `REQUIRE_LIVE_MARKET=true`.
 
 ## Come decide (tutte le condizioni devono essere vere)
 
@@ -97,8 +118,8 @@ docker compose logs -f --tail=80
 docker compose ps               # colonna STATUS: healthy/unhealthy (heartbeat ogni ciclo)
 ```
 
-Chiavi: `ALLSPORTS_API_KEY` (punteggi, quote pre, risultati: obbligatoria) e `ODDS_API_KEY` (quote live:
-obbligatoria con `REQUIRE_LIVE_MARKET=true`). Servono anche `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`
+Chiavi: nel profilo gratuito servono solo `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`. `ALLSPORTS_API_KEY`
+(con `SCORES_PROVIDER=allsports`) e `ODDS_API_KEY` (quote live) sono facoltative, a pagamento. Servono anche `TELEGRAM_BOT_TOKEN` e `TELEGRAM_CHAT_ID`
 (creato con [@BotFather](https://t.me/BotFather)). Non condividere `.env` e non committarlo.
 
 Passa a `DRY_RUN=false` solo dopo `validate` con stati promossi e una revisione di `report` sui dati live, poi

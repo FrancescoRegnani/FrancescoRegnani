@@ -15,6 +15,7 @@ from .config import Config
 from .decision import Evaluation, Quote, evaluate, match_state
 from .engine import Market, Match, final_winner, map_outcome, name_match, parse_allsports_odds, parse_market, \
     parse_match, parse_timestamp
+from .espn import ESPNFeed
 from .feeds import AllSports, FeedError, Telegram, TheOddsAPI
 from .model import EmpiricalModel
 from .storage import Storage
@@ -72,7 +73,7 @@ def orient(match: Match, market_first: str, prob: dict[str, float], prices: dict
     return Quote(p, q, books, spread, source)
 
 
-def format_alert(ev: Evaluation, now: datetime, dry_run: bool) -> str:
+def format_alert(ev: Evaluation, now: datetime, dry_run: bool, scores_source: str = "AllSports") -> str:
     m, est = ev.match, ev.estimate
     when = now.astimezone(ROME).strftime("%d/%m/%Y %H:%M:%S %Z")
     target = m.first if ev.target == "first" else m.second
@@ -93,7 +94,8 @@ def format_alert(ev: Evaluation, now: datetime, dry_run: bool) -> str:
          f"  = solo storico {est.point:.1%} (campione {est.n}, stato {ev.state})" if est else ""),
         f"Quota live mediana: {live_price} | quota equa modello: {fair} | margine atteso: {edge}",
         "Evidenze: " + "; ".join(ev.evidence),
-        "Fonti dati: AllSports (punteggi, quote pre), The Odds API (quote live). Non è una garanzia di esito.",
+        f"Fonti dati: {scores_source} (punteggi, quote pre)"
+        + (", The Odds API (quote live)" if ev.live_prob is not None else "") + ". Non è una garanzia di esito.",
     ]
     return "\n".join(lines)
 
@@ -103,7 +105,13 @@ class Monitor:
         cfg.validate(live=storage is None)
         self.cfg = cfg
         self.db = storage or Storage(cfg.db_path)
-        self.all = allsports or AllSports(cfg.allsports_key)
+        if allsports is not None:
+            self.all = allsports
+        elif cfg.scores_provider == "espn":
+            self.all = ESPNFeed(dict(cfg.espn_leagues), idle_refresh=cfg.espn_idle_refresh)
+        else:
+            self.all = AllSports(cfg.allsports_key)
+        self.source_label = "ESPN" if cfg.scores_provider == "espn" else "AllSports"
         self.odds = odds if odds is not None else (TheOddsAPI(cfg.odds_key, cfg.regions) if cfg.odds_key else None)
         self.telegram = telegram or (Telegram(cfg.telegram_token, cfg.telegram_chat) if not cfg.dry_run else None)
         self.stopped = False
@@ -165,17 +173,17 @@ class Monitor:
             try:
                 raw = self.all.odds(sport, today, today + timedelta(days=1))
             except (FeedError, ValueError, OSError) as exc:
-                LOG.warning("Quote pre-partita AllSports %s indisponibili: %s", sport, exc)
+                LOG.warning("Quote pre-partita %s %s indisponibili: %s", self.source_label, sport, exc)
                 continue
             stored = 0
             for key, (prob, prices, books, spread) in parse_allsports_odds(
-                    sport, raw, self.cfg.min_books, self.cfg.max_spread).items():
+                    sport, raw, self.cfg.prematch_min_books, self.cfg.max_spread).items():
                 if f"{sport}:{key}" in live_keys:
                     continue  # partita già iniziata: non aggiornare la quota "pre"
                 self.db.store_pre(f"as:{sport}:{key}", {**prob, "_books": books, "_spread": spread}, now, prices,
-                                  source="allsports")
+                                  source=self.source_label.lower())
                 stored += 1
-            LOG.info("Quote pre AllSports %s: %d eventi aggiornati", sport, stored)
+            LOG.info("Quote pre %s %s: %d eventi aggiornati", self.source_label, sport, stored)
 
     def odds_keys(self) -> list[str]:
         assert self.odds is not None
@@ -308,7 +316,7 @@ class Monitor:
             stored, books, spread = self._load_pre(f"as:{match.sport}:{match.event_id}")
             if stored:
                 pre = Quote(stored, self.db.pre_prices(f"as:{match.sport}:{match.event_id}"), books, spread,
-                            "AllSports")
+                            self.source_label)
         return pre, live
 
     def _load_pre(self, event_id: str) -> tuple[dict[str, float] | None, int, float]:
@@ -338,7 +346,7 @@ class Monitor:
     def dispatch(self, alerts: list[Evaluation], now: datetime):
         for ev in alerts:
             key = f"{ev.match.sport}:{ev.match.event_id}"
-            message = format_alert(ev, now, self.cfg.dry_run)
+            message = format_alert(ev, now, self.cfg.dry_run, self.source_label)
             if self.cfg.dry_run:
                 self.dry_alerted.add(key)
                 LOG.info("CANDIDATO (DRY_RUN, nessun invio):\n%s", message)
