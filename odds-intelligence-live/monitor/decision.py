@@ -5,11 +5,13 @@ Un alert parte solo se TUTTE le condizioni sono vere:
    è in svantaggio;
 2. lo stato di gioco è coperto dallo storico (tennis: inizio di un set dopo averne perso uno;
    calcio: intervallo); il basket non ha ancora storico => mai alert, solo archivio;
-3. il modello empirico ha un campione >= MODEL_MIN_SAMPLE e il LIMITE INFERIORE di confidenza
-   della probabilità è strettamente > soglia;
+3. il modello empirico ha un campione >= MODEL_MIN_SAMPLE; la probabilità finale è la media pesata
+   (MODEL_WEIGHT) fra storico e mercato live senza margine, e la stessa media calcolata sul LIMITE
+   INFERIORE dello storico è strettamente > soglia;
 4. lo stato/esito è stato PROMOSSO dalla validazione fuori tempo (comando `validate`);
-5. il mercato live (se richiesto) è disponibile, non contraddice il modello di oltre
-   MAX_MODEL_MARKET_GAP e, se REQUIRE_VALUE, la quota offerta supera la quota equa del modello;
+5. il mercato live (se richiesto) è disponibile, non contraddice lo storico di oltre
+   MAX_MODEL_MARKET_GAP (spento di default) e, se REQUIRE_VALUE, la quota offerta supera la quota
+   equa della probabilità finale;
 6. nessun infortunio confermato / alta fatica dal contesto manuale verificato.
 
 Ogni valutazione, anche negativa, viene archiviata con il motivo: serve al backtest.
@@ -50,6 +52,8 @@ class Evaluation:
     estimate: Estimate | None
     pre_source: str = ""
     evidence: tuple[str, ...] = field(default_factory=tuple)
+    final: float | None = None        # media pesata storico/mercato live
+    final_lower: float | None = None  # stessa media sul limite inferiore dello storico
 
     @property
     def label(self) -> str:
@@ -64,6 +68,7 @@ class Evaluation:
                 "model_point": self.estimate.point if self.estimate else None,
                 "model_lower": self.estimate.lower if self.estimate else None,
                 "model_n": self.estimate.n if self.estimate else None,
+                "final_prob": self.final, "final_lower": self.final_lower,
                 "decision": self.decision, "reason": self.reason}
 
 
@@ -135,9 +140,11 @@ def evaluate(match: Match, pre: Quote | None, live: Quote | None, model: Empiric
             details.get("fatigue", ""), "non verificato"))
         evidence += [s for s in details.get("sources", []) if isinstance(s, str) and s.startswith("https://")]
 
+        final = final_lower = None
+
         def result(decision: str, reason: str) -> Evaluation:
             return Evaluation(match, outcome, state, target, decision, reason, pre_prob, pre_price, live_prob,
-                              live_price, est, pre.source, tuple(evidence))
+                              live_price, est, pre.source, tuple(evidence), final, final_lower)
 
         if match.sport == "tennis" and not (pre_price and 1 < pre_price <= cfg.max_tennis_prematch_odds):
             out.append(result("shadow", f"quota pre-partita {pre_price or 'n/d'} oltre {cfg.max_tennis_prematch_odds}"))
@@ -151,8 +158,19 @@ def evaluate(match: Match, pre: Quote | None, live: Quote | None, model: Empiric
         if not est:
             out.append(result("shadow", f"campione storico insufficiente (< {cfg.model_min_sample})"))
             continue
-        if est.lower <= cfg.threshold:
-            out.append(result("shadow", f"limite inferiore {est.lower:.1%} non > {cfg.threshold:.0%}"))
+        if live is None or live_prob is None:
+            if cfg.require_live_market:
+                out.append(result("shadow", "mercato live non disponibile"))
+                continue
+            final, final_lower = est.point, est.lower
+        else:
+            # Media pesata: lo storico misura situazioni simili, il mercato live vede le notizie di giornata.
+            w = cfg.model_weight
+            final = w * est.point + (1 - w) * live_prob
+            final_lower = w * est.lower + (1 - w) * live_prob
+        if final_lower <= cfg.threshold:
+            out.append(result("shadow", f"probabilità combinata {final:.1%} (prudente {final_lower:.1%}) "
+                                        f"non > {cfg.threshold:.0%}"))
             continue
         if (state, outcome) not in approved:
             out.append(result("shadow", "stato non promosso dalla validazione fuori campione"))
@@ -160,11 +178,7 @@ def evaluate(match: Match, pre: Quote | None, live: Quote | None, model: Empiric
         if cfg.require_verified_context and not details:
             out.append(result("shadow", "contesto infortuni/fatica non verificato"))
             continue
-        if live is None or live_prob is None:
-            if cfg.require_live_market:
-                out.append(result("shadow", "mercato live non disponibile"))
-                continue
-        elif live_prob < est.point - cfg.max_model_market_gap:
+        if live_prob is not None and live_prob < est.point - cfg.max_model_market_gap:
             out.append(result("shadow", f"mercato live {live_prob:.1%} molto sotto il modello "
                                         f"{est.point:.1%}: possibile informazione nuova"))
             continue
@@ -172,7 +186,7 @@ def evaluate(match: Match, pre: Quote | None, live: Quote | None, model: Empiric
             if live_price is None:
                 out.append(result("shadow", "quota live per questo esito non disponibile: valore non verificabile"))
                 continue
-            needed = (1 + cfg.min_edge) / est.point
+            needed = (1 + cfg.min_edge) / final
             if live_price < needed:
                 out.append(result("shadow", f"nessun valore: quota {live_price:.2f} < {needed:.2f} richiesta"))
                 continue

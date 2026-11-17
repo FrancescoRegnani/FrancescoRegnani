@@ -16,12 +16,12 @@ Progetto commissionato da un utente italiano (Karim) che vuole un servizio auton
 
 ## Stato effettivo del codice (v0.2)
 
-**Testato offline (38 test, Python 3.12 e 3.13); NON distribuito su server, NON collegato a chiavi reali, build Docker non ancora provata.** `DRY_RUN=true` di default. Senza storico importato e validato non parte **nessun alert** (fail closed).
+**Testato offline (39 test, Python 3.12 e 3.13); NON distribuito su server, NON collegato a chiavi reali, build Docker non ancora provata.** `DRY_RUN=true` di default. Senza storico importato e validato non parte **nessun alert** (fail closed).
 
 - `monitor/engine.py`: parsing livescore AllSports (set/game, minuto/intervallo, punteggio), mercati The Odds API, quote pre AllSports (`Odds`), esiti finali (`Fixtures`), de-vig, abbinamento nomi.
 - `monitor/model.py`: modello empirico per stato di gioco + prob. pre-partita (finestra ±bandwidth), limite inferiore di Wilson, validazione fuori tempo (Brier, log loss, fasce, promozione).
 - `monitor/history.py`: import di CSV locali (football-data / tennis-data). Nessun download automatico.
-- `monitor/decision.py`: regole fail-closed (favorito sotto, stato coperto, campione, limite inferiore >70%, promozione, mercato live coerente, valore, contesto).
+- `monitor/decision.py`: regole fail-closed (favorito pre-partita sotto, stato coperto, campione, media pesata storico/mercato live `MODEL_WEIGHT` con limite inferiore >70%, promozione, valore, contesto). La media col mercato non è validabile sullo storico: si misura con `report`.
 - `monitor/app.py`: ciclo; calendario `/events` gratuito, quote live solo dove servono, archivio completo, risoluzione esiti, heartbeat.
 - `monitor/storage.py`: SQLite (prematch first/last, odds_snapshots, score_snapshots, evaluations, results, history, validations, quota, kv).
 - `monitor/__main__.py`: CLI `run | demo | import-history | import-live | validate | report | status`.

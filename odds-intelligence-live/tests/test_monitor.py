@@ -212,7 +212,19 @@ class DecisionTests(unittest.TestCase):
     def test_live_market_required_and_consistent(self):
         self.assertIn("mercato live non disponibile", self.decide(live=None).reason)
         crash = Quote({"first": 0.5, "second": 0.5}, {"first": 1.9, "second": 1.9}, 4, 0.02)
-        self.assertIn("molto sotto il modello", self.decide(live=crash).reason)
+        # La media storico/mercato scende sotto soglia; il blocco per divergenza è opzionale.
+        self.assertIn("probabilità combinata", self.decide(live=crash).reason)
+        self.assertIn("molto sotto il modello",
+                      self.decide(live=crash, cfg=cfg(max_model_market_gap=0.15, threshold=0.6)).reason)
+
+    def test_final_probability_is_weighted_average(self):
+        ev = self.decide()
+        self.assertAlmostEqual(ev.final, 0.5 * ev.estimate.point + 0.5 * 0.73)
+        self.assertAlmostEqual(ev.final_lower, 0.5 * ev.estimate.lower + 0.5 * 0.73)
+        only_model = self.decide(cfg=cfg(model_weight=1.0))
+        self.assertAlmostEqual(only_model.final, only_model.estimate.point)
+        # Solo mercato: 73% live, ma niente alert se il valore non c'è (quota 1.33 < 1.02/0.73).
+        self.assertEqual(self.decide(cfg=cfg(model_weight=0.0)).decision, "shadow")
 
     def test_no_value_no_alert(self):
         cheap = Quote({"first": 0.2, "second": 0.8}, {"first": 4.6, "second": 1.20}, 4, 0.02)

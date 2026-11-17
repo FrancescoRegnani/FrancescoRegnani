@@ -83,15 +83,16 @@ def cmd_report(cfg: Config) -> None:
     groups: dict[tuple[str, str, str], list[dict]] = {}
     for r in rows:
         groups.setdefault((r["decision"], r["state"], r["outcome"]), []).append(r)
-    print("decisione | stato | esito | n | riuscite | prob. modello media | prob. mercato live media")
+    print("decisione | stato | esito | n | riuscite | storico medio | mercato live medio | finale media")
     for (decision, state, outcome), items in sorted(groups.items()):
         hits = [int(r["winner"] == r["target_side"] or (outcome == "not_lose" and r["winner"] == "draw"))
                 for r in items]
         mp = [r["model_point"] for r in items if r["model_point"] is not None]
         lp = [r["live_prob"] for r in items if r["live_prob"] is not None]
+        fp = [r["final_prob"] for r in items if r.get("final_prob") is not None]
         lo, hi = wilson(sum(hits), len(hits), 1.96)
         print(f"{decision:7} | {state:28} | {outcome:8} | {len(items):4d} | {sum(hits) / len(hits):6.1%} "
-              f"[{lo:.0%}-{hi:.0%}] | {_pct(sum(mp) / len(mp) if mp else None)} | {_pct(sum(lp) / len(lp) if lp else None)}")
+              f"[{lo:.0%}-{hi:.0%}] | {_pct(sum(mp) / len(mp) if mp else None)} | {_pct(sum(lp) / len(lp) if lp else None)} | {_pct(sum(fp) / len(fp) if fp else None)}")
 
 
 def cmd_status(cfg: Config) -> None:

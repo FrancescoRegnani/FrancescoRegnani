@@ -76,9 +76,9 @@ def format_alert(ev: Evaluation, now: datetime, dry_run: bool) -> str:
     m, est = ev.match, ev.estimate
     when = now.astimezone(ROME).strftime("%d/%m/%Y %H:%M:%S %Z")
     target = m.first if ev.target == "first" else m.second
-    fair = f"{1 / est.point:.2f}" if est else "n/d"
+    fair = f"{1 / ev.final:.2f}" if ev.final else "n/d"
     live_price = f"{ev.live_price:.2f}" if ev.live_price else "n/d"
-    edge = f"{ev.live_price * est.point - 1:+.1%}" if est and ev.live_price else "n/d"
+    edge = f"{ev.live_price * ev.final - 1:+.1%}" if ev.final and ev.live_price else "n/d"
     lines = [
         f"{'[SIMULAZIONE] ' if dry_run else ''}POSSIBILE RIMONTA — {m.sport.upper()}",
         f"{m.competition or 'Competizione da verificare'}",
@@ -86,8 +86,11 @@ def format_alert(ev: Evaluation, now: datetime, dry_run: bool) -> str:
         f"Punteggio: {m.score} | fase: {m.phase}",
         f"Ora Italia: {when}",
         f"Favorito in svantaggio: {target} | esito: {ev.label}",
-        (f"Probabilità storica calibrata: {est.point:.1%} (limite inferiore {est.lower:.1%}, "
-         f"campione {est.n}, stato {ev.state})") if est else "Probabilità: n/d",
+        (f"PROBABILITÀ FINALE: {ev.final:.1%} (stima prudente {ev.final_lower:.1%})"
+         if ev.final is not None else "Probabilità finale: n/d"),
+        (f"  = media fra storico {est.point:.1%} (limite inferiore {est.lower:.1%}, campione {est.n}, "
+         f"stato {ev.state}) e mercato live {ev.live_prob:.1%}" if est and ev.live_prob is not None else
+         f"  = solo storico {est.point:.1%} (campione {est.n}, stato {ev.state})" if est else ""),
         f"Quota live mediana: {live_price} | quota equa modello: {fair} | margine atteso: {edge}",
         "Evidenze: " + "; ".join(ev.evidence),
         "Fonti dati: AllSports (punteggi, quote pre), The Odds API (quote live). Non è una garanzia di esito.",

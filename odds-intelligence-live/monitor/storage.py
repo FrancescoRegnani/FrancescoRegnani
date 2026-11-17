@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS evaluations (
   sport TEXT NOT NULL, competition TEXT, first TEXT, second TEXT, target_side TEXT NOT NULL,
   first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, score TEXT, phase TEXT,
   pre_prob REAL, pre_price REAL, live_prob REAL, live_price REAL,
-  model_point REAL, model_lower REAL, model_n INTEGER,
+  model_point REAL, model_lower REAL, model_n INTEGER, final_prob REAL, final_lower REAL,
   decision TEXT NOT NULL, reason TEXT NOT NULL, sent_at TEXT,
   PRIMARY KEY (match_key, outcome, state)
 );
@@ -70,6 +70,10 @@ class Storage:
                           ("last_prob", "TEXT"), ("last_prices", "TEXT"), ("last_seen", "TEXT")):
             if name not in cols:
                 self.conn.execute(f"ALTER TABLE prematch ADD COLUMN {name} {ddl}")
+        ecols = {row[1] for row in self.conn.execute("PRAGMA table_info(evaluations)")}
+        for name in ("final_prob", "final_lower"):
+            if name not in ecols:
+                self.conn.execute(f"ALTER TABLE evaluations ADD COLUMN {name} REAL")
         self.conn.commit()
 
     # --- quote pre-partita -------------------------------------------------------------
@@ -111,7 +115,7 @@ class Storage:
         se diventa più forte (shadow -> alert). Così il backtest usa il primo istante utile."""
         cols = ("match_key", "outcome", "state", "sport", "competition", "first", "second", "target_side",
                 "score", "phase", "pre_prob", "pre_price", "live_prob", "live_price", "model_point",
-                "model_lower", "model_n", "decision", "reason")
+                "model_lower", "model_n", "final_prob", "final_lower", "decision", "reason")
         values = [ev.get(c) for c in cols]
         self.conn.execute(f"""INSERT INTO evaluations ({', '.join(cols)}, first_seen, last_seen)
             VALUES ({', '.join('?' * len(cols))}, ?, ?)

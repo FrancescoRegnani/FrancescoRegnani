@@ -44,7 +44,8 @@ class Config:
     require_live_market: bool = True
     require_value: bool = True
     min_edge: float = 0.02
-    max_model_market_gap: float = 0.15
+    max_model_market_gap: float = 1.0
+    model_weight: float = 0.5
     tennis_model_tiers: tuple[str, ...] = ("atp", "wta")
     tennis_max_games_into_set: int = 4
     football_ht_tolerance: int = 0
@@ -85,7 +86,8 @@ class Config:
             require_live_market=boolean_env("REQUIRE_LIVE_MARKET", True),
             require_value=boolean_env("REQUIRE_VALUE", True),
             min_edge=float(e("MIN_EDGE", "0.02")),
-            max_model_market_gap=float(e("MAX_MODEL_MARKET_GAP", "0.15")),
+            max_model_market_gap=float(e("MAX_MODEL_MARKET_GAP", "1.0")),
+            model_weight=float(e("MODEL_WEIGHT", "0.5")),
             tennis_model_tiers=_list("TENNIS_MODEL_TIERS", "atp,wta"),
             tennis_max_games_into_set=int(e("TENNIS_MAX_GAMES_INTO_SET", "4")),
             football_ht_tolerance=int(e("FOOTBALL_HT_TOLERANCE_MIN", "0")),
@@ -106,6 +108,8 @@ class Config:
             raise ValueError("MODEL_BANDWIDTH deve essere da 0.01 a 0.20")
         if self.model_min_sample < 30:
             raise ValueError("MODEL_MIN_SAMPLE deve essere almeno 30")
+        if not 0 <= self.model_weight <= 1:
+            raise ValueError("MODEL_WEIGHT deve essere fra 0 (solo mercato) e 1 (solo storico)")
         if self.model_z < 0.84:
             raise ValueError("MODEL_Z troppo basso: almeno 0.84 (80% unilaterale)")
         if not 0 <= self.football_ht_tolerance <= 10:

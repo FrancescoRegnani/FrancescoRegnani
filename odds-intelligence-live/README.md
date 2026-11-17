@@ -5,7 +5,7 @@ Servizio Python 3.12 / Docker che ogni 60 secondi osserva tennis (ATP/WTA/Challe
 **misurata su uno storico e validata fuori campione**, ha un limite inferiore di confidenza strettamente
 superiore al 70%.
 
-> **Stato (v0.2):** codice e 38 test offline funzionanti. **Non è installato su alcun server e non è
+> **Stato (v0.2):** codice e 39 test offline funzionanti. **Non è installato su alcun server e non è
 > collegato a chiavi reali.** Senza uno storico importato e validato, il servizio **non emette alcun alert**
 > (fail closed): raccoglie e archivia dati. `DRY_RUN=true` di default.
 
@@ -13,7 +13,7 @@ superiore al 70%.
 
 | Problema v0.1 | Soluzione v0.2 |
 |---|---|
-| La "probabilità" era la quota live meno una penalità fissa: ogni alert, per costruzione, indicava una scommessa a valore atteso negativo | Probabilità = frequenza storica di rimonta per stato di gioco e forza pre-partita, con limite inferiore di Wilson. Con `REQUIRE_VALUE=true` l'alert parte solo se la quota live offerta supera la quota equa del modello (+`MIN_EDGE`) |
+| La "probabilità" era la quota live meno una penalità fissa: ogni alert, per costruzione, indicava una scommessa a valore atteso negativo | Probabilità finale = media pesata fra frequenza storica di rimonta (per stato di gioco e forza pre-partita, con limite inferiore di Wilson) e mercato live. Con `REQUIRE_VALUE=true` l'alert parte solo se la quota live offerta supera la quota equa del modello (+`MIN_EDGE`) |
 | Nessuna calibrazione | Comando `validate`: addestramento prima di una data, verifica dopo; Brier, log loss, fasce di calibrazione. Uno stato/esito genera alert **solo se promosso** |
 | In DRY_RUN non si archiviava nulla | Ogni valutazione (alert, shadow, blocked + motivo), snapshot di punteggio, quote pre e live ed esito finale vanno in SQLite. `report` misura la calibrazione reale, `import-live` riusa questi dati come storico |
 | `.env` copiato nell'immagine Docker | `.dockerignore`, Dockerfile che copia solo `monitor/`, utente non-root, healthcheck |
@@ -35,22 +35,29 @@ superiore al 70%.
    - basket: **nessuno storico calibrato disponibile ⇒ mai alert**. Le situazioni vengono archiviate per
      costruirlo.
 3. Modello empirico: esempi storici dello stesso stato con prob. pre entro ±`MODEL_BANDWIDTH`. Servono almeno
-   `MODEL_MIN_SAMPLE` esempi. Si usa il **limite inferiore** di Wilson (z=`MODEL_Z`, 90% unilaterale) e deve
-   essere **> 70%**.
-4. Lo stato/esito è **promosso dalla validazione fuori tempo**: almeno `VALIDATION_MIN_ALERTS` alert simulati
-   nel periodo di test, frequenza osservata > soglia, scarto predetto/osservato ≤ `VALIDATION_MAX_GAP`.
-   Ogni nuovo import di storico azzera le promozioni.
-5. Mercato live (The Odds API, ≥3 bookmaker freschi, divergenza ≤10%):
-   - deve esistere se `REQUIRE_LIVE_MARKET=true`;
-   - non deve essere più basso del modello di oltre `MAX_MODEL_MARKET_GAP`, perché potrebbe sapere qualcosa,
-     per esempio un infortunio;
-   - con `REQUIRE_VALUE=true`, la quota offerta deve essere ≥ (1+`MIN_EDGE`)/probabilità.
+   `MODEL_MIN_SAMPLE` esempi.
+4. **Probabilità finale = media pesata** fra storico e mercato live senza margine:
+   `MODEL_WEIGHT × storico + (1 − MODEL_WEIGHT) × mercato` (default 0,5, cioè media semplice). Lo storico
+   misura come sono finite situazioni simili; il mercato vede le notizie di giornata (infortuni, condizioni,
+   andamento del set). L'alert richiede che la stessa media, calcolata con il **limite inferiore** di Wilson
+   dello storico (z=`MODEL_Z`), sia **> 70%**. Senza mercato live (e `REQUIRE_LIVE_MARKET=false`) conta solo
+   lo storico.
+5. Lo stato/esito deve essere **promosso dalla validazione fuori tempo** dello storico: almeno
+   `VALIDATION_MIN_ALERTS` alert simulati nel test, frequenza osservata > soglia, scarto predetto/osservato
+   ≤ `VALIDATION_MAX_GAP`. Ogni nuovo import di storico azzera le promozioni.
+
+   La media con il mercato **non è validabile sullo storico** (i CSV non hanno quote live). La sua
+   calibrazione si misura con `report` sui dati raccolti dal servizio, nella colonna "finale media".
+6. Mercato live (The Odds API, ≥3 bookmaker freschi, divergenza ≤10%):
+   - obbligatorio se `REQUIRE_LIVE_MARKET=true`;
+   - con `REQUIRE_VALUE=true` la quota offerta deve essere ≥ (1+`MIN_EDGE`)/probabilità finale;
+   - blocco facoltativo `MAX_MODEL_MARKET_GAP` (spento di default) se il mercato è molto sotto lo storico.
 
    Per "almeno pareggio" non esiste una quota live double chance nei feed: con `REQUIRE_VALUE=true` non parte
    alcun alert su quell'esito.
-6. `context.json`: un infortunio confermato o un'alta fatica bloccano l'alert. Senza riscontro il messaggio
+7. `context.json`: un infortunio confermato o un'alta fatica bloccano l'alert. Senza riscontro il messaggio
    dice "non verificati". Con `REQUIRE_VERIFIED_CONTEXT=true` il riscontro diventa obbligatorio.
-7. Una sola segnalazione per partita.
+8. Una sola segnalazione per partita.
 
 ## Dati storici: da dove e come
 
