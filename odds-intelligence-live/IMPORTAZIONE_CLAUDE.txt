@@ -1,0 +1,68 @@
+ODDS INTELLIGENCE LIVE — GUIDA DI IMPORTAZIONE SU CLAUDE
+=========================================================
+
+Questo ZIP contiene il progetto completo scritto finora, più documentazione
+per riprendere lo sviluppo senza la conversazione originale di ChatGPT.
+
+ALTERNATIVA A — CLAUDE CODE (ideale per continuare a programmare)
+1. Estrai lo ZIP sul computer.
+2. Apri con Claude Code la cartella "odds-intelligence-live".
+3. Claude Code leggerà il documento "CLAUDE.md" nella cartella principale.
+4. Chiedi: "Leggi CLAUDE.md e README.md, esegui i test, verifica lo stato reale
+   e proponi un piano di sviluppo prima di cambiare il codice".
+
+ALTERNATIVA B — CLAUDE.AI, PROGETTI (chat web)
+1. Estrai lo ZIP sul computer (non contare sul fatto che il sito interpreti
+   automaticamente un archivio ZIP come tutti i suoi file sorgenti).
+2. Crea un progetto con nome "Odds Intelligence Live".
+3. Carica nella sezione di conoscenza "CLAUDE.md", "README.md" e i file
+   del progetto, se il tipo viene accettato. Se il caricamento di un .py
+   non è disponibile, rinomina una COPIA .py in .txt prima di caricarla.
+4. Copia il PROMPT DI AVVIO qui sotto in una nuova chat del progetto.
+5. Se devi fare vere modifiche a tutti i file e testarli, preferisci Claude
+   Code o un repository collegato; la sola conoscenza di un progetto web
+   non sostituisce un ambiente di esecuzione.
+
+PROMPT DI AVVIO DA INCOLLARE SU CLAUDE
+------------------------------------
+"Voglio riprendere lo sviluppo del progetto Odds Intelligence Live che ho
+allegato. Leggi integralmente CLAUDE.md e README.md, poi analizza il codice
+Python e i test. Gli obiettivi sono: monitor ogni minuto di tennis
+ATP/WTA/Challenger, calcio e basket; identificazione di favoriti in
+svantaggio; avvisi Telegram solo quando la probabilità FINALE di rimonta
+è rigorosamente >70% e supportata da dati affidabili, modelli storicamente
+calibrati, quote pre e live, forma, infortuni, fatica, statistiche e fonti.
+Per il calcio distingui almeno pareggio da vittoria. Per il tennis usa
+inizialmente quota pre-partita <=1.20. Evita duplicati e segnali senza
+evidenza. Non presentare l'euristica attuale come probabilità verificata:
+prima sviluppa pipeline storica e calibrazione. Non attivare notifiche reali
+né spendere crediti API senza mia autorizzazione. Per prima cosa esegui i
+test, indicami esattamente cosa funziona, quali limiti ci sono e proponimi
+una roadmap per arrivare a una versione realmente affidabile." 
+
+STATO ALL'ESPORTAZIONE
+---------------------
+- Prototipo Python/Docker già scritto, codice e test inclusi.
+- 15 test di unità passati nell'ambiente originale.
+- Modello solo euristico, NON backtestato né calibrato.
+- Servizio NON installato sul server e NON attivo.
+- Default DRY_RUN=true: nessuna notifica Telegram.
+- Chiavi API e token assenti dal pacchetto.
+- Richiede abbonamenti provider e bot Telegram per eseguire i live.
+
+STRUTTURA
+---------
+CLAUDE.md                 Memoria di progetto per Claude Code
+README.md                 Manuale e limiti tecnici
+IMPORTAZIONE_CLAUDE.txt   Questo documento
+monitor/                  Codice Python
+tests/                    Test automatici
+Dockerfile                Container
+compose.yaml              Servizio Docker
+.env.example              Variabili richieste, nessun segreto
+context.example.json      Struttura per contesto manuale
+
+NOTA SULLA RISERVATEZZA
+-----------------------
+Il file .env reale, il database con dati locali e i token NON sono esportati.
+Non caricare o incollare chiavi private di API o Telegram su chat pubbliche.
