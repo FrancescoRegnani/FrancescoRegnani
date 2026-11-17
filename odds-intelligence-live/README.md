@@ -115,6 +115,7 @@ Passa a `DRY_RUN=false` solo dopo `validate` con stati promossi e una revisione 
 | `python -m monitor validate --cutoff AAAA-MM-GG` | validazione fuori tempo e promozione |
 | `python -m monitor report` | calibrazione osservata di alert/shadow archiviati |
 | `python -m monitor status` | crediti, storico per stato, stati promossi |
+| `python -m monitor test-telegram` | invia un messaggio di prova al bot |
 
 Test: `python3 -m unittest discover -s tests -v`
 

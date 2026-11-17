@@ -8,6 +8,7 @@
   python -m monitor validate --cutoff 2025-07-01
   python -m monitor report                   # calibrazione delle valutazioni archiviate
   python -m monitor status
+  python -m monitor test-telegram            # invia un messaggio di prova al bot
 """
 from __future__ import annotations
 
@@ -109,6 +110,20 @@ def cmd_status(cfg: Config) -> None:
     print("Valutazioni archiviate:", dict(counts) or "nessuna")
 
 
+def cmd_test_telegram(cfg: Config) -> None:
+    from .feeds import FeedError, Telegram
+    if not (cfg.telegram_token and cfg.telegram_chat):
+        print("Mancano TELEGRAM_BOT_TOKEN e/o TELEGRAM_CHAT_ID nel file .env")
+        sys.exit(1)
+    try:
+        Telegram(cfg.telegram_token, cfg.telegram_chat).send(
+            "Odds Intelligence Live: bot collegato correttamente. Messaggio di prova, nessuna segnalazione.")
+    except FeedError as exc:
+        print(f"Invio non riuscito: {exc}. Controlla token, chat ID e di aver scritto /start al bot.")
+        sys.exit(1)
+    print("Messaggio di prova inviato: controlla Telegram.")
+
+
 def demo() -> None:
     """Pipeline completa con dati SINTETICI: storico simulato, validazione, valutazione, messaggio."""
     rng = random.Random(7)
@@ -159,6 +174,7 @@ def main(argv: list[str] | None = None) -> None:
     val.add_argument("--cutoff", required=True, help="data AAAA-MM-GG: prima = addestramento, dopo = test")
     sub.add_parser("report")
     sub.add_parser("status")
+    sub.add_parser("test-telegram")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
     cfg = Config.from_env()
@@ -175,6 +191,8 @@ def main(argv: list[str] | None = None) -> None:
         cmd_report(cfg)
     elif command == "status":
         cmd_status(cfg)
+    elif command == "test-telegram":
+        cmd_test_telegram(cfg)
     else:
         Monitor(cfg).run()
 
