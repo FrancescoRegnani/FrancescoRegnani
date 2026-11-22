@@ -1,5 +1,8 @@
 # Second Brain con Claude — Guida passo passo
 
+> **Livello successivo:** il palazzo di file (mappa `AGENTS.md`, biblioteca, ali clienti, skill) è in
+> [`CERVELLO.md`](CERVELLO.md). Questa pagina copre lo strato di memoria Honcho.
+
 Ricostruzione del metodo del video **"DON'T Use Obsidian, Build a Claude Second Brain! (Tutorial)"**
 (https://www.youtube.com/watch?v=kG_CoTjCC98).
 
@@ -35,7 +38,10 @@ Claude Code tramite il plugin ufficiale `claude-honcho`, che lavora con gli **ho
 
 | File | A cosa serve |
 |---|---|
-| `README.md` | Questa guida. |
+| `README.md` | Questa guida (memoria Honcho). |
+| `CERVELLO.md` | Guida al palazzo di file: mappa, biblioteca, ali clienti, skill. |
+| `installa-cervello.sh` | Crea `~/SecondBrain` dal modello in `cervello/`. |
+| `cervello/` | Il modello vuoto del second brain. |
 | `setup.sh` | Script che crea `~/.honcho/config.json` già configurato come "cervello unico condiviso". |
 | `config.example.json` | Esempio commentato della configurazione condivisa (Claude Code + Codex + Cursor). |
 | `AGENTS.md.example` | Istruzioni da copiare in `~/.codex/AGENTS.md` per far usare la memoria anche a Codex. |
