@@ -8,4 +8,4 @@
 
 ## Diario
 ### 2026-11-22
-- Creato il second brain dal modello (mappa, biblioteca, ali clienti, skill).
+- Creato il second brain dal modello.

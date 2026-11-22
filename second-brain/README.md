@@ -40,8 +40,8 @@ Claude Code tramite il plugin ufficiale `claude-honcho`, che lavora con gli **ho
 |---|---|
 | `README.md` | Questa guida (memoria Honcho). |
 | `CERVELLO.md` | Guida al palazzo di file: mappa, biblioteca, ali clienti, skill. |
-| `installa-cervello.sh` | Crea `~/SecondBrain` dal modello in `cervello/`. |
-| `cervello/` | Il modello vuoto del second brain. |
+| `installa-cervello.sh` | Crea o aggiorna un cervello: `--profilo studio` (PC Windows) o `--profilo personale` (Mac). |
+| `cervello/` | Il modello vuoto: `comune/`, `studio/`, `personale/`. |
 | `setup.sh` | Script che crea `~/.honcho/config.json` già configurato come "cervello unico condiviso". |
 | `config.example.json` | Esempio commentato della configurazione condivisa (Claude Code + Codex + Cursor). |
 | `AGENTS.md.example` | Istruzioni da copiare in `~/.codex/AGENTS.md` per far usare la memoria anche a Codex. |

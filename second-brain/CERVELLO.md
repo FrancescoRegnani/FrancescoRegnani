@@ -16,28 +16,20 @@ Il palazzo dice all'agente **dove sono le cose**. Honcho gli dice **chi sei**. L
 
 ---
 
-## Il palazzo, stanza per stanza
+## Due cervelli, due computer
 
-```
-~/SecondBrain/
-├── AGENTS.md          ← la MAPPA: la leggono tutti gli agenti (snella, solo puntatori)
-├── CLAUDE.md          ← dice a Claude Code "leggi AGENTS.md" (così la mappa è una sola)
-├── MEMORY.md          ← DIARIO DI BORDO generale: decisioni e cose in sospeso
-├── reference/         ← BIBLIOTECA: modelli di offerte, pareri, email "buone"
-├── clienti/           ← le ALI: una cartella per cliente
-│   └── _modello-cliente/   (AGENTS.md + MEMORY.md + chiamate/ consulenza/ documenti/)
-├── immobili/          ← immobili di FAMIGLIA (separati dallo studio)
-├── progetti/          ← progetti personali (es. Abilita)
-├── scadenzari/        ← scadenzari salvati
-├── inbox/             ← appunti grezzi e file da smistare
-├── archivio/          ← clienti chiusi e memoria vecchia
-└── .claude/
-    ├── skills/        ← MANUALE DELLE PROCEDURE (vedi sotto)
-    ├── hooks/apertura.sh   ← a ogni avvio carica data, ultime memorie e inbox
-    └── settings.json
-```
+| | 🏢 PC Windows (studio) | 🏠 Mac (casa) |
+|---|---|---|
+| Cartella | `SecondBrain-Studio` | `~/SecondBrain` |
+| Profilo | `studio` | `personale` |
+| Stanze | `clienti/`, `reference/`, `scadenzari/` | `immobili/`, `progetti/`, `scadenzari/` |
+| Procedure | intervista, nuovo-cliente, brief-cliente, offerta, scadenzario, pulisci-dettato, chiudi-sessione | intervista, nuovo-immobile, scadenzario, pulisci-dettato, chiudi-sessione |
+| Honcho | No, oppure con `saveMessages: false` | Sì, completo |
 
-Le **strade** sono i collegamenti verso l'esterno: Gmail, Google Drive e gli altri connettori.
+La **struttura** (mappe, procedure, modelli) arriva su entrambi da questo repository. I **dati** restano
+su ciascun computer e non passano mai dall'uno all'altro: i clienti sul PC dello studio, le cose personali sul Mac.
+
+Il modello è in `cervello/`: `comune/` (parti uguali per entrambi), `studio/` e `personale/`.
 
 ### Perché `AGENTS.md` e non solo `CLAUDE.md`
 `AGENTS.md` è lo standard letto da Codex, ChatGPT Work, Antigravity e altri. `CLAUDE.md` contiene
@@ -64,78 +56,74 @@ La regola del video: **se fai una cosa due volte, diventa una skill.** `/chiudi-
 
 ---
 
-## Installazione (sul Mac)
+## Installazione sul PC Windows dello studio (app desktop di Claude)
 
-### 1. Aggiorna il progetto
+L'app desktop ha la scheda **Code**: è Claude Code con interfaccia grafica, lavora su una cartella del
+PC, legge la mappa e usa le procedure. Non serve il terminale.
+
+1. Installa **Git for Windows** (https://git-scm.com/downloads/win, tutte le opzioni predefinite).
+   Serve a Claude per eseguire comandi e per l'hook di apertura.
+2. Riavvia l'app Claude, apri la scheda **Code** e scegli come cartella `Documenti`.
+3. Scrivi a Claude:
+   > Clona il repository https://github.com/FrancescoRegnani/FrancescoRegnani (branch `claude/happy-cannon-7ssarz`)
+   > in questa cartella, poi esegui con bash: `bash FrancescoRegnani/second-brain/installa-cervello.sh --profilo studio`
+4. Apri una **nuova sessione** nella scheda Code e scegli la cartella `SecondBrain-Studio`, nella tua
+   cartella utente: `C:\Users\<tuo nome>\SecondBrain-Studio`.
+5. Scrivi `/intervista`.
+
+Ogni giorno apri la scheda Code **sulla cartella `SecondBrain-Studio`**.
+
+## Installazione sul Mac di casa
+
 ```bash
 cd ~/FrancescoRegnani
 ```
 ```bash
 git pull
 ```
-
-### 2. Crea il cervello in `~/SecondBrain`
 ```bash
-bash second-brain/installa-cervello.sh
+bash second-brain/installa-cervello.sh --aggiorna --profilo personale
 ```
-Non sovrascrive mai file esistenti, quindi puoi rilanciarlo senza problemi. Crea anche una cronologia
-locale delle modifiche (git solo sul Mac, niente viene inviato online).
+Se `~/SecondBrain` esiste già, viene trasformato in cervello personale: le procedure dello studio
+spariscono (solo se non le hai modificate) e arrivano quelle personali. Mappa, memoria e dati restano.
+Se la mappa contiene la parte studio dell'intervista, chiedi a Claude:
+> Questo è il cervello personale: riscrivi AGENTS.md partendo dal modello del profilo personale,
+> tenendo solo le informazioni personali (immobili di famiglia, progetti). Togli quelle sullo studio.
 
-### 3. Aprilo con Claude Code
+Poi:
 ```bash
 cd ~/SecondBrain
 ```
 ```bash
 claude
 ```
-Alla domanda "Do you trust this folder?" rispondi **Yes**.
 
-### 4. Fai l'intervista
-```
-/intervista
-```
+## Aggiornare procedure e modelli (entrambi i computer)
+Quando nel repository arrivano procedure nuove: `git pull` nella cartella `FrancescoRegnani`, poi
+`bash second-brain/installa-cervello.sh --aggiorna`. Il profilo viene riconosciuto da solo.
+Sul PC dello studio puoi chiederlo direttamente a Claude nella scheda Code.
 
-### 5. Collega Gmail e Google Drive (le "strade")
-In Claude Code scrivi `/mcp` e collega Gmail e Google Drive, oppure usa i connettori di claude.ai.
-Poi prova:
-```
-/nuovo-cliente
-```
-```
-/brief-cliente
-```
-
-### Aggiornare procedure e modelli
-Quando nel repository arrivano procedure nuove:
-```bash
-cd ~/FrancescoRegnani && git pull
-```
-```bash
-bash second-brain/installa-cervello.sh --aggiorna
-```
-Sostituisce solo `.claude/` e i modelli `_modello-…`: mappa, memoria, clienti e immobili non vengono toccati.
-
-### 6. Ogni giorno
-- Apri sempre Claude Code **dentro `~/SecondBrain`**.
+## Ogni giorno
 - Butta appunti e PDF in `inbox/` e chiedi "smista l'inbox".
 - Per i modelli: metti un PDF buono in `inbox/` e chiedi di ricavarne la struttura in `reference/`.
 - A fine lavoro: `/chiudi-sessione`.
 
 ### Usare lo stesso cervello con altri agenti
-- **Codex**: `cd ~/SecondBrain && codex` legge `AGENTS.md` da solo.
-- **ChatGPT Work / Antigravity**: apri la cartella `~/SecondBrain` come progetto o workspace.
+- **Codex**: aperto nella cartella del cervello legge `AGENTS.md` da solo.
+- **ChatGPT Work / Antigravity**: apri la cartella del cervello come progetto o workspace.
   Le skill sono normali file di istruzioni in `.claude/skills/`, e la mappa dice dove trovarle.
-- **Obsidian** (opzionale, per sfogliarlo): apri `~/SecondBrain` come vault. Sono tutti file Markdown.
+- **Obsidian** (opzionale, per sfogliarlo): apri la cartella come vault. Sono tutti file Markdown.
 
 ---
 
 ## Privacy (importante per uno studio)
-- Il cervello sta in `~/SecondBrain`, **fuori** dal repository GitHub: i dati dei clienti non vanno online.
-  Nel repository c'è solo il modello vuoto.
+- I cervelli stanno **fuori** dal repository GitHub: i dati non vanno online. Nel repository c'è solo il modello vuoto.
+- I dati dei clienti stanno **solo sul PC dello studio**, non sul Mac di casa.
 - Il contenuto dei file che l'agente legge viene inviato al fornitore del modello (Anthropic, OpenAI…)
   durante la conversazione. Valuta cosa metterci in base agli obblighi di riservatezza e al GDPR.
-- Se Honcho è attivo in cloud, anche le conversazioni vanno ai server Honcho. Per le sessioni sui
-  clienti puoi sospenderlo con `/plugin` (disabilita honcho) oppure usare Honcho in locale.
+- Honcho: sul PC dello studio non installarlo, oppure usalo con `saveMessages: false`. In questo modo legge
+  le tue preferenze ma non carica le conversazioni sui clienti. Usare nomi in codice non basta: Claude
+  legge e ripete i dati veri, e dal punto di vista GDPR i dati pseudonimizzati restano dati personali.
 - Connettori Gmail/Drive: le skill li usano **solo in lettura**. L'agente deve chiedere conferma
   prima di inviare, cancellare o condividere.
-- Fai un backup di `~/SecondBrain`, per esempio con Time Machine.
+- Backup: Time Machine sul Mac; sul PC dello studio, il backup dello studio (o OneDrive aziendale se previsto).

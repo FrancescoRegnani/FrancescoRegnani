@@ -6,7 +6,7 @@ description: Costruisce lo scadenzario del periodo (settimana o mese) per i clie
 # Scadenzario
 
 1. Chiedi il periodo se non è chiaro (default: da oggi a fine mese prossimo).
-2. Leggi la **Scheda** di ogni `clienti/*/AGENTS.md` (tipo, periodicità, regime, servizi) e
+2. Considera solo le stanze che esistono in questo cervello. Leggi la **Scheda** di ogni `clienti/*/AGENTS.md` (tipo, periodicità, regime, servizi) e
    la sezione "In sospeso" dei rispettivi `MEMORY.md`. Leggi `immobili/*/AGENTS.md` (scadenze contratti, rinnovi, ISTAT).
 3. Raggruppa:
    - **Clienti mensili**: liquidazione e versamento IVA del mese, F24.
