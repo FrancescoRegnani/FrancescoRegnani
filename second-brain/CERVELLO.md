@@ -26,7 +26,9 @@ Il palazzo dice all'agente **dove sono le cose**. Honcho gli dice **chi sei**. L
 ├── reference/         ← BIBLIOTECA: modelli di offerte, pareri, email "buone"
 ├── clienti/           ← le ALI: una cartella per cliente
 │   └── _modello-cliente/   (AGENTS.md + MEMORY.md + chiamate/ consulenza/ documenti/)
-├── progetti/          ← progetti personali (es. ProExam)
+├── immobili/          ← immobili di FAMIGLIA (separati dallo studio)
+├── progetti/          ← progetti personali (es. Abilita)
+├── scadenzari/        ← scadenzari salvati
 ├── inbox/             ← appunti grezzi e file da smistare
 ├── archivio/          ← clienti chiusi e memoria vecchia
 └── .claude/
@@ -50,7 +52,9 @@ guardare e l'agente apre i file solo quando servono. Così il contesto resta leg
 | Comando | Cosa fa |
 |---|---|
 | `/intervista` | Ti intervista (max 10 domande) e compila la mappa |
-| `/nuovo-cliente` | Crea l'ala di un cliente dal modello |
+| `/nuovo-cliente` | Crea l'ala di un cliente dal modello (tipo, periodicità mensile/trimestrale, regime) |
+| `/nuovo-immobile` | Crea la scheda di un immobile di famiglia |
+| `/scadenzario` | Scadenze del periodo: clienti mensili, trimestrali, enti non commerciali, immobili |
 | `/brief-cliente` | Legge Gmail e Drive (solo lettura) e scrive `brief.md` del cliente |
 | `/offerta` | Prepara un'offerta seguendo il modello della biblioteca, anche in PDF |
 | `/pulisci-dettato` | Trasforma un dettato vocale in una richiesta pulita |
@@ -100,6 +104,16 @@ Poi prova:
 ```
 /brief-cliente
 ```
+
+### Aggiornare procedure e modelli
+Quando nel repository arrivano procedure nuove:
+```bash
+cd ~/FrancescoRegnani && git pull
+```
+```bash
+bash second-brain/installa-cervello.sh --aggiorna
+```
+Sostituisce solo `.claude/` e i modelli `_modello-…`: mappa, memoria, clienti e immobili non vengono toccati.
 
 ### 6. Ogni giorno
 - Apri sempre Claude Code **dentro `~/SecondBrain`**.

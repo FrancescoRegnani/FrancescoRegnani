@@ -2,11 +2,14 @@
 
 > Mappa locale dell'ala. Snella: chi è, dove sono le cose, regole specifiche.
 
-## Chi è
-- Ragione sociale / tipo: {{TIPO}}
-- Referente: {{REFERENTE}}
-- Rapporto dal: {{DATA}}
-- Servizi: {{SERVIZI}}
+## Scheda
+- Tipo: {{società (SRL/SNC/SAS/SPA/coop) | ditta individuale | professionista | ente non commerciale (circolo ARCI, ASD, associazione, fondazione) | privato}}
+- Periodicità contabilità / IVA: {{mensile | trimestrale | nessuna (solo dichiarativi)}}
+- Regime: {{ordinario | semplificato | forfettario | 398/91 | altro}}
+- Referente: {{REFERENTE}} — recapiti in rubrica (/rubrica-clienti)
+- Cliente dal: {{DATA}}
+- Servizi: {{contabilità, dichiarativi, bilancio, paghe (esterne?), locazioni, consulenza…}}
+- Codice in TeamSystem: {{CODICE}}
 
 ## Stanze
 | Cartella | Contenuto |
@@ -18,4 +21,4 @@
 | `brief.md` | Brief aggiornato (creato da `brief-cliente`) |
 
 ## Regole specifiche
-- {{es. comunica solo via PEC; scadenze IVA trimestrali}}
+- {{es. comunica solo via PEC; documenti entro il 5 del mese; locazioni in cedolare secca}}

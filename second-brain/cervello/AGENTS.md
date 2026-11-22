@@ -16,7 +16,9 @@
 | `MEMORY.md` | Diario di bordo generale: decisioni, cose in sospeso | Sempre, a inizio lavoro (solo le ultime voci) |
 | `reference/` | **Biblioteca**: modelli, strutture, esempi buoni (offerte, pareri, email) | Quando produci un documento che ha un modello |
 | `clienti/<nome>/` | **Ali** dei clienti: ognuna ha il suo `AGENTS.md` e `MEMORY.md` | Quando il compito riguarda quel cliente |
-| `progetti/<nome>/` | Progetti personali (es. ProExam) | Quando il compito riguarda quel progetto |
+| `immobili/<nome>/` | Immobili di **famiglia** (personali, separati dallo studio) | Quando il compito riguarda un immobile di famiglia |
+| `progetti/<nome>/` | Progetti personali (es. Abilita) | Quando il compito riguarda quel progetto |
+| `scadenzari/` | Scadenzari salvati | Quando chiedo le scadenze |
 | `inbox/` | Appunti grezzi, dettati, file da smistare | Quando chiedo di "smistare" o "elaborare l'inbox" |
 | `archivio/` | Clienti e progetti chiusi | Solo se lo chiedo esplicitamente |
 | `.claude/skills/` | **Manuale delle procedure** ripetibili | Vedi sotto |
@@ -28,7 +30,9 @@
 ## Procedure (skill)
 Per altri agenti: le procedure sono file di istruzioni in `.claude/skills/<nome>/SKILL.md`.
 - `intervista` — crea o aggiorna questa mappa intervistandomi
-- `nuovo-cliente` — apre una nuova ala cliente dal modello
+- `nuovo-cliente` — apre una nuova ala cliente dal modello (con periodicità mensile/trimestrale)
+- `nuovo-immobile` — crea la scheda di un immobile di famiglia
+- `scadenzario` — scadenze del periodo per clienti (mensili, trimestrali, enti) e immobili
 - `brief-cliente` — scrive il brief di un cliente da email e Drive
 - `offerta` — prepara un'offerta seguendo `reference/struttura-offerta.md`
 - `pulisci-dettato` — trasforma un dettato vocale in un prompt pulito
@@ -37,6 +41,7 @@ Per altri agenti: le procedure sono file di istruzioni in `.claude/skills/<nome>
 ## Regole del palazzo
 1. Non leggere tutto: parti da questa mappa e apri solo i file necessari.
 2. Ogni cliente vive nella sua ala; non mescolare informazioni tra clienti.
+   Gli affitti dei clienti stanno nell'ala del cliente; gli immobili di famiglia in `immobili/`.
 3. Non inventare dati: se manca un'informazione, chiedila o segnalala.
 4. Prima di inviare, cancellare o condividere qualcosa all'esterno, chiedi conferma.
 5. A fine sessione proponi `chiudi-sessione`.

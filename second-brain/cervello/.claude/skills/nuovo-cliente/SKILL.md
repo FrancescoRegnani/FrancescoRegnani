@@ -5,7 +5,9 @@ description: Apre una nuova ala cliente nel second brain copiando clienti/_model
 
 # Nuova ala cliente
 
-1. Chiedi (se mancano): nome cliente, tipo (persona, ditta, società), referente, servizi.
+1. Chiedi (se mancano): nome cliente, tipo (società, ditta, professionista, ente non commerciale, privato),
+   **periodicità contabilità/IVA (mensile, trimestrale, nessuna)**, regime, referente, servizi.
+   Per i recapiti cerca prima con /rubrica-clienti.
 2. Crea `clienti/<nome-in-minuscolo-con-trattini>/` copiando `clienti/_modello-cliente/`.
 3. Sostituisci i segnaposto `{{…}}` in `AGENTS.md` e `MEMORY.md`; lascia vuoto ciò che non sai.
 4. Aggiungi in `MEMORY.md` del cliente la voce di apertura con la data di oggi.
